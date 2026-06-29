@@ -1,0 +1,8 @@
+slam_toolbox:
+  ros__parameters:
+    # Stub params. See slam_toolbox's online_async docs for the full set
+    # (mode, resolution, max_laser_range, scan_topic, etc.).
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
