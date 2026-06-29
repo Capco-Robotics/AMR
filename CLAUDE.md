@@ -24,6 +24,7 @@ Toolbox/Nav2 for navigation.
 | `amr_pico_bridge` | Owns the serial link to the Pico; the only package that touches that port. Translates the wire protocol (see below) to/from ROS2 topics. |
 | `amr_navigation/move` (`amr_navigation_move`) | `cmd_vel` → per-wheel setpoints (kinematics/calibration live here, not on the Pico), and odometry (encoder ticks → `/odom` + tf). |
 | `amr_navigation/map` (`amr_navigation_map`) | Config + launch only — SLAM Toolbox and Nav2. No custom nodes. |
+| `amr_navigation/imu` (`amr_navigation_imu`) | Placeholder — empty config/launch, no nodes yet. Reserved in case IMU-based localization is used instead of (or alongside) SLAM Toolbox. |
 | `amr_lift` | Decides lift target height and tracks reported state. PWM/limit-switch/PID logic itself is on the Pico. |
 | `amr_error` | Decides what fault means what siren/light pattern. GPIO drive itself is on the Pico. |
 | `amr_charging` | BMS telemetry. The BMS talks directly to the RPi over its own UART/I2C, not through the Pico. |
@@ -60,7 +61,8 @@ comms_protocol.py` on the Pico side. Every message has `type` + `seq` (+`ts`).
 
 - Spaces in conceptual names become underscores in folder/package names
   (e.g. "AMR Engine Package" → `AMR_Engine_Package`).
-- `amr_navigation/move` and `amr_navigation/map` are separate colcon
-  packages (`amr_navigation_move`, `amr_navigation_map`) nested under one
-  directory — colcon discovers `package.xml` recursively, so this is valid
-  and keeps the Navigation = Move + Map grouping visible in the tree.
+- `amr_navigation/move`, `amr_navigation/map`, and `amr_navigation/imu` are
+  separate colcon packages (`amr_navigation_move`, `amr_navigation_map`,
+  `amr_navigation_imu`) nested under one directory — colcon discovers
+  `package.xml` recursively, so this is valid and keeps the Navigation =
+  Move + Map + IMU grouping visible in the tree.
