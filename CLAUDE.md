@@ -2,9 +2,9 @@
 
 Autonomous mobile robot: Raspberry Pi (Linux, ROS2, Python) + Raspberry Pi
 Pico (no OS, MicroPython) for real-time I/O. Differential drive (2 motors,
-1 driver, 2 quadrature encoders), a closed-loop linear-actuator lift, an
-audio siren + visual light for error signaling, a BMS, and SLAM
-Toolbox/Nav2 for navigation.
+1 driver, 2 AS5600 absolute magnetic encoders via I2C), a closed-loop
+linear-actuator lift, an audio siren + visual light for error signaling,
+a BMS, and SLAM Toolbox/Nav2 for navigation.
 
 ## Repo layout
 
@@ -34,11 +34,12 @@ Toolbox/Nav2 for navigation.
 ## Pico vs RPi split
 
 Pico owns anything needing tight timing/GPIO-level real-time control,
-independent of whether the RPi is alive: motor PWM, PIO-driven encoder
-counting, lift PWM + limit switches + position PID (the lift needs
-arbitrary intermediate positions, so its PID loop runs on the Pico's
-**second core** via MicroPython `_thread`, separate from the motor/encoder/
-serial-comms loop on core 0), siren/light GPIO, and a two-layer fail-safe:
+independent of whether the RPi is alive: motor PWM, I2C polling of AS5600
+absolute encoders (left on I2C0 GP4/5, right on I2C1 GP6/7), lift PWM +
+limit switches + position PID (the lift needs arbitrary intermediate
+positions, so its PID loop runs on the Pico's **second core** via
+MicroPython `_thread`, separate from the motor/encoder/serial-comms loop
+on core 0), siren/light GPIO, and a two-layer fail-safe:
 heartbeat-loss watchdog (RPi stopped talking → stop motors, hold lift,
 trigger siren/light) plus a hardware WDT (Pico's own runtime hangs → chip
 self-resets). See `pico_firmware/watchdog.py`.

@@ -11,6 +11,8 @@ from rclpy.node import Node
 from amr_pico_bridge import protocol_codec
 from amr_pico_bridge.serial_transport import SerialTransport
 
+# TODO: from amr_msgs.srv import GetPicoStatus, TriggerEstop
+
 
 class PicoBridgeNode(Node):
     def __init__(self):
@@ -23,6 +25,10 @@ class PicoBridgeNode(Node):
         )
         # TODO: wire up amr_msgs publishers/subscribers and the
         # heartbeat timer once the transport is implemented.
+
+        # TODO: implement callbacks and uncomment
+        # self.create_service(GetPicoStatus, 'get_pico_status', self._handle_get_pico_status)
+        # self.create_service(TriggerEstop, 'trigger_estop', self._handle_trigger_estop)
 
 
 def main(args=None):

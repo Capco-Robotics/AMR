@@ -7,7 +7,7 @@ adjusted without reflashing.
 
 WHEEL_RADIUS_M = 0.0
 TRACK_WIDTH_M = 0.0
-TICKS_PER_REV = 0
+TICKS_PER_REV = 4096  # AS5600 12-bit absolute encoder
 
 
 def twist_to_wheel_speeds(linear: float, angular: float) -> tuple[float, float]:

@@ -6,11 +6,16 @@ MOTOR_LEFT_DIR_PIN = None
 MOTOR_RIGHT_PWM_PIN = None
 MOTOR_RIGHT_DIR_PIN = None
 
-# Quadrature encoders (2x, PIO-backed)
-ENCODER_LEFT_A_PIN = None
-ENCODER_LEFT_B_PIN = None
-ENCODER_RIGHT_A_PIN = None
-ENCODER_RIGHT_B_PIN = None
+# AS5600 absolute magnetic encoders (2x, I2C-backed, address 0x36 each)
+# Left encoder on I2C0, right encoder on I2C1 (separate buses, same chip address).
+ENCODER_LEFT_I2C_ID = 0   # machine.I2C(0, ...)
+ENCODER_LEFT_SDA_PIN = 4  # GP4
+ENCODER_LEFT_SCL_PIN = 5  # GP5
+ENCODER_RIGHT_I2C_ID = 1  # machine.I2C(1, ...)
+ENCODER_RIGHT_SDA_PIN = 6  # GP6
+ENCODER_RIGHT_SCL_PIN = 7  # GP7
+ENCODER_I2C_FREQ = 400_000
+AS5600_ADDR = 0x36
 
 # Linear actuator (lift) -- closed-loop, position feedback + PID on core 1
 LIFT_PWM_PIN = None
