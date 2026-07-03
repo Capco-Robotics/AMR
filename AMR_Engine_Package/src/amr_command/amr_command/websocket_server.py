@@ -2,14 +2,41 @@
 clients, and (later) receiving operator commands to forward into the ROS2 graph.
 """
 
+import asyncio
+import json
+import websockets
 
 class WebsocketServer:
     def __init__(self, host: str = '0.0.0.0', port: int = 8765):
         self.host = host
         self.port = port
+        self.connections = set()
+        self._on_message_cb = None
+
+    async def _handle_client(self, websocket):
+        try:
+            self.connections.add(websocket)
+            async for message in websocket:
+                frame = json.loads(message)
+                if self._on_message_cb:
+                    self._on_message_cb(frame)
+
+        finally:
+            self.connections.remove(websocket)
 
     async def start(self):
-        raise NotImplementedError
-
+        async with websockets.serve(
+            self._handle_client,
+            self.host,
+            self.port
+        ):
+            await asyncio.Future()
+       
     async def broadcast(self, message: dict):
-        raise NotImplementedError
+        json_message=json.dumps(message)
+        for websocket in self.connections.copy():
+            try:
+                await websocket.send(json_message)
+            except Exception:
+                self.connections.remove(websocket)
+       
