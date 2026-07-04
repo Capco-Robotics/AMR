@@ -18,10 +18,34 @@ from amr_command.websocket_server import WebsocketServer
 # TODO: from rclpy.action import ActionClient
 
 
+class OperatorInputArbiter:
+    """
+    Stores the latest operator command.
+
+    This class is intentionally simple for now. The 'source' parameter is
+    included so that future command sources (joystick, autonomy, etc.) can be
+    arbitrated without changing the public API.
+    """
+
+    def __init__(self):
+        self._linear = 0.0
+        self._angular = 0.0
+        self._lock = threading.Lock()
+
+    def submit_command(self, source: str, linear: float, angular: float):
+        with self._lock:
+            self._linear = linear
+            self._angular = angular
+
+    def get_active_command(self):
+        with self._lock:
+            return self._linear, self._angular
+
+
 class CommandGatewayNode(Node):
 
     def __init__(self):
-        super().__init__('amr_command')
+        super().__init__("amr_command")
 
         # Existing websocket server
         self.websocket_server = WebsocketServer()
@@ -31,19 +55,17 @@ class CommandGatewayNode(Node):
         # over the websocket; receive operator commands and forward to amr_engine.
 
         # TODO: instantiate clients and uncomment
-        # self._navigate_client = ActionClient(self, NavigateToGoal, 'navigate_to_goal')
-        # self._estop_client = self.create_client(TriggerEstop, 'trigger_estop')
+        # self._navigate_client = ActionClient(self, NavigateToGoal, "navigate_to_goal")
+        # self._estop_client = self.create_client(TriggerEstop, "trigger_estop")
+
+        # Operator input arbiter
+        self.arbiter = OperatorInputArbiter()
 
         # Run websocket server in background
         threading.Thread(
             target=self._run_ws,
-            daemon=True
+            daemon=True,
         ).start()
-
-        # Latest command state
-        self.linear = 0.0
-        self.angular = 0.0
-        self.last_update = self.get_clock().now()
 
         # ROS publisher
         self.cmd_vel_pub = self.create_publisher(
@@ -53,10 +75,14 @@ class CommandGatewayNode(Node):
         )
 
         # Publish commands every 100 ms
-        self.create_timer(0.1, self._publish)
+        self.create_timer(
+            0.1,
+            self._publish_cmd_vel,
+        )
 
     def _run_ws(self):
         import asyncio
+
         asyncio.run(self.websocket_server.start())
 
     def _on_ws_frame(self, message: str):
@@ -64,29 +90,28 @@ class CommandGatewayNode(Node):
             data = json.loads(message)
 
             if data.get("type") == "drive":
-                self.linear = float(data.get("linear", 0.0))
-                self.angular = float(data.get("angular", 0.0))
-                self.last_update = self.get_clock().now()
+                self.arbiter.submit_command(
+                    source="browser",
+                    linear=float(data.get("linear", 0.0)),
+                    angular=float(data.get("angular", 0.0)),
+                )
 
         except Exception as e:
             self.get_logger().error(str(e))
 
-    def _publish(self):
-        msg = Twist()
+    def _publish_cmd_vel(self):
+        linear, angular = self.arbiter.get_active_command()
 
-        # Stop robot if command becomes stale
-        if (self.get_clock().now() - self.last_update).nanoseconds * 1e-9 > 1.0:
-            msg.linear.x = 0.0
-            msg.angular.z = 0.0
-        else:
-            msg.linear.x = self.linear
-            msg.angular.z = self.angular
+        msg = Twist()
+        msg.linear.x = linear
+        msg.angular.z = angular
 
         self.cmd_vel_pub.publish(msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
+
     node = CommandGatewayNode()
 
     try:
@@ -96,5 +121,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
