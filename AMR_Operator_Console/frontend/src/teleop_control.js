@@ -1,6 +1,8 @@
 const DRIVE_LINEAR_SPEED = 0.4;
 const DRIVE_ANGULAR_SPEED = 1.0;
 
+const _active = new Set();
+
 function _computeDriveFrame(keys) {
     let linear = 0.0;
     let angular = 0.0;
@@ -40,9 +42,9 @@ function _sendFrame(socket, keys) {
         JSON.stringify(frame)
     );
 }
+
 export function initTeleop(socket) {
 
-    const keys = new Set();
 
     document.addEventListener("keydown", (event) => {
 
@@ -52,7 +54,7 @@ export function initTeleop(socket) {
 
             event.preventDefault();
 
-            keys.add(key);
+            _active.add(key);
         }
     });
 
@@ -64,13 +66,51 @@ export function initTeleop(socket) {
 
             event.preventDefault();
 
-            keys.delete(key);
+            _active.delete(key);
         }
     });
 
     setInterval(() => {
 
-        _sendFrame(socket, keys);
+        _sendFrame(socket, _active);
 
     }, 100);
+}
+
+export function initTeleopButtons(padElement) {
+
+    const buttons = padElement.querySelectorAll("[data-key]");
+
+    buttons.forEach((button) => {
+
+        const key = button.dataset.key;
+
+        button.addEventListener("mousedown", () => {
+            
+            _active.add(key);
+        });
+
+        button.addEventListener("touchstart", (event) => {
+
+            event.preventDefault();
+            _active.add(key);
+        });
+        button.addEventListener("mouseup", () => {
+            _active.delete(key);
+        });
+
+        button.addEventListener("mouseleave", () => {
+             _active.delete(key);
+        });
+
+        button.addEventListener("touchend", () => {
+             _active.delete(key);
+        });
+
+        button.addEventListener("touchcancel", () => {
+             _active.delete(key);
+        });
+
+    });
+
 }

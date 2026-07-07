@@ -46,6 +46,7 @@ class CommandGatewayNode(Node):
 
     def __init__(self):
         super().__init__("amr_command")
+        self.get_logger().info("CommandGatewayNode started")
 
         # Existing websocket server
         self.websocket_server = WebsocketServer()
@@ -73,6 +74,8 @@ class CommandGatewayNode(Node):
             "/cmd_vel",
             10,
         )
+        
+        self.get_logger().info("cmd_vel publisher created")
 
         # Publish commands every 100 ms
         self.create_timer(

@@ -18,6 +18,8 @@ class WebsocketServer:
             self.connections.add(websocket)
             async for message in websocket:
                 frame = json.loads(message)
+                print("Received:", frame)
+
                 if self._on_message_cb:
                     self._on_message_cb(frame)
 
@@ -40,3 +42,5 @@ class WebsocketServer:
             except Exception:
                 self.connections.remove(websocket)
        
+if __name__ == "__main__":
+    asyncio.run(WebsocketServer().start())
