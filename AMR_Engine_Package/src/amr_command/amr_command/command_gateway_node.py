@@ -74,7 +74,7 @@ class CommandGatewayNode(Node):
             "/cmd_vel",
             10,
         )
-        
+
         self.get_logger().info("cmd_vel publisher created")
 
         # Publish commands every 100 ms
@@ -88,9 +88,9 @@ class CommandGatewayNode(Node):
 
         asyncio.run(self.websocket_server.start())
 
-    def _on_ws_frame(self, message: str):
+    def _on_ws_frame(self, data):
         try:
-            data = json.loads(message)
+            
 
             if data.get("type") == "drive":
                 self.arbiter.submit_command(
