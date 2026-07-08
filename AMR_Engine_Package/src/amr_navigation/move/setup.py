@@ -21,6 +21,7 @@ setup(
         'console_scripts': [
             'drive_controller_node = amr_navigation_move.drive_controller_node:main',
             'odometry_node = amr_navigation_move.odometry_node:main',
+            'fake_pico_node = amr_navigation_move.fake_pico_node:main',
         ],
     },
 )
