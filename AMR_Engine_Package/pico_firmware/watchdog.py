@@ -1,3 +1,5 @@
+# pico_firmware/watchdog.py
+
 """Two independent safety layers:
 
 1. Heartbeat-loss watchdog -- detects the RPi has stopped talking to us
@@ -12,7 +14,7 @@
    failing silently with motors potentially still energized.
 """
 import time
-
+import machine
 import config
 
 
@@ -22,7 +24,9 @@ class Watchdog:
         self.actuator_control = actuator_control
         self.signal_io = signal_io
         self._last_rpi_msg_ms = time.ticks_ms()
-        self._hw_wdt = None  # TODO: machine.WDT(timeout=config.HARDWARE_WDT_TIMEOUT_MS)
+        
+        # FIXED: Instantiate the hardware watchdog timer
+        self._hw_wdt = machine.WDT(timeout=config.HARDWARE_WDT_TIMEOUT_MS)
         self._tripped = False
 
     def on_rpi_message(self):
