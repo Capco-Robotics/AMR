@@ -23,25 +23,25 @@ class OdometryNode(Node):
     def __init__(self):
         super().__init__("odometry")
 
-    # Robot pose in global frame
+        # Robot pose in global frame
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
 
-    # Store previous callback time
+        # Store previous callback time
         self.last_time = self.get_clock().now()
 
-    # Publisher: /odom
+        # Publisher: /odom
         self.odom_pub = self.create_publisher(
             Odometry,
             "/odom",
             10,
         )
 
-    # TF Broadcaster
+        # TF Broadcaster
         self.tf_broadcaster = TransformBroadcaster(self)
 
-    # Subscriber: /encoder_ticks
+        # Subscriber: /encoder_ticks
         self.encoder_sub = self.create_subscription(
             EncoderTicks,
             "/encoder_ticks",
@@ -51,12 +51,12 @@ class OdometryNode(Node):
 
         self.get_logger().info("Odometry Node Started")
 
-    # TODO: implement callback and uncomment
-    # self.create_service(
-    #     ResetOdometry,
-    #     "reset_odometry",
-    #     self._handle_reset_odometry,
-    # )
+        # TODO: implement callback and uncomment
+        # self.create_service(
+        #     ResetOdometry,
+        #     "reset_odometry",
+        #     self._handle_reset_odometry,
+        # )
 
     def _on_encoder_ticks(self, msg: EncoderTicks):
         """Handle incoming encoder tick updates."""

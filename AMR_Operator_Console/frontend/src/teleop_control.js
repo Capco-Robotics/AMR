@@ -100,15 +100,15 @@ export function initTeleopButtons(padElement) {
         });
 
         button.addEventListener("mouseleave", () => {
-             _active.delete(key);
+            _active.delete(key);
         });
 
         button.addEventListener("touchend", () => {
-             _active.delete(key);
+            _active.delete(key);
         });
 
         button.addEventListener("touchcancel", () => {
-             _active.delete(key);
+            _active.delete(key);
         });
 
     });
