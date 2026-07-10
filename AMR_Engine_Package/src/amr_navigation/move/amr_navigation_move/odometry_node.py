@@ -27,6 +27,8 @@ class OdometryNode(Node):
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
+        self.last_left_ticks = None
+        self.last_right_ticks = None
 
         # Store previous callback time
         self.last_time = self.get_clock().now()
@@ -67,9 +69,20 @@ class OdometryNode(Node):
         self.last_time = current_time
 
         # Convert encoder ticks into local robot motion
+        if self.last_left_ticks is None:
+            self.last_left_ticks = msg.left_ticks
+            self.last_right_ticks = msg.right_ticks
+            return
+
+        left_delta = msg.left_ticks - self.last_left_ticks
+        right_delta = msg.right_ticks - self.last_right_ticks
+
+        self.last_left_ticks = msg.left_ticks
+        self.last_right_ticks = msg.right_ticks
+
         dx, dy, dtheta = ticks_to_pose_delta(
-            msg.left_ticks,
-            msg.right_ticks,
+            left_delta,
+            right_delta,
             dt,
         )
 
