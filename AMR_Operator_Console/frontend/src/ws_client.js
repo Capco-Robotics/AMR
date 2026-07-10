@@ -1,7 +1,7 @@
 // Connects to amr_command's websocket gateway on the RPi and dispatches
 // incoming telemetry frames to whichever panel/renderer cares about them.
-import { initTeleop } from "./teleop_control.js";
-import { initTeleopButtons } from "./teleop_control.js";
+import { initTeleop, initTeleopButtons } from "./teleop_control.js";
+import { renderMap } from "./map_renderer.js";
 
 const WS_URL = 'ws://localhost:8765';
 
@@ -12,6 +12,10 @@ export function connect(onMessage) {
 }
 function handleTelemetryFrame(data) {
   console.log("Telemetry frame received:", data);
+
+  if (data.type === "map") {
+    renderMap(data);
+  }
 }
 const socket = connect(handleTelemetryFrame);
 

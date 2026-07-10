@@ -39,6 +39,7 @@ class CommandGatewayNode(Node):
 
     def __init__(self):
         super().__init__("amr_command")
+        self.get_logger().info("***** NEW CODE LOADED *****")
         self.get_logger().info("CommandGatewayNode started")
 
         self.websocket_server = WebsocketServer()
@@ -115,18 +116,30 @@ class CommandGatewayNode(Node):
         }
 
     def _map_callback(self, msg):
+        self.get_logger().info("===== MAP CALLBACK HIT =====")
+
         try:
             frame = encode_occupancy_grid(msg)
+
+            self.get_logger().info(
+                f"Encoded map: {frame['width']} x {frame['height']}"
+            )
 
             frame["type"] = "map"
             frame["pose"] = self._latest_pose
 
-            # Broadcast map frame here
-            # (implementation depends on websocket_server.py)
+            if self.websocket_server.loop is not None:
+                asyncio.run_coroutine_threadsafe(
+                    self.websocket_server.broadcast(frame),
+                    self.websocket_server.loop,
+                )
+                self.get_logger().info("Map frame broadcasted")
+            else:
+                self.get_logger().warning("WebSocket loop not ready")
 
         except Exception as e:
             self.get_logger().error(f"Map broadcast failed: {e}")
-
+            
     def _publish_cmd_vel(self):
         linear, angular = self.arbiter.get_active_command()
 
