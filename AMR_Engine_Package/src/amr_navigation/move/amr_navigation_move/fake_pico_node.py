@@ -33,7 +33,7 @@ class FakePicoNode(Node):
             10,
         )
 
-         # 50 ms update loop
+        # 50 ms update loop
         self.timer = self.create_timer(
             0.05,
             self._timer_callback,
