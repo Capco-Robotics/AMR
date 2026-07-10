@@ -115,6 +115,8 @@ class CommandGatewayNode(Node):
         }
 
     def _map_callback(self, msg):
+        self.get_logger().info("MAP RECEIVED")
+        
         try:
           frame = encode_occupancy_grid(msg)
 
