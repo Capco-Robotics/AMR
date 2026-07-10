@@ -116,21 +116,20 @@ class CommandGatewayNode(Node):
 
     def _map_callback(self, msg):
         try:
-            self.get_logger().info("Map received")
-            frame = encode_occupancy_grid(msg)
-
-            self.get_logger().info(
-                f"Encoded map: {frame['width']} x {frame['height']}"
-            )
+          frame = encode_occupancy_grid(msg)
 
             frame["type"] = "map"
             frame["pose"] = self._latest_pose
 
-            # Broadcast map frame here
-            # (implementation depends on websocket_server.py)
+            if self.websocket_server.loop:
+                asyncio.run_coroutine_threadsafe(
+                    self.websocket_server.broadcast(frame),
+                    self.websocket_server.loop,
+                )
 
         except Exception as e:
             self.get_logger().error(f"Map broadcast failed: {e}")
+  
 
     def _publish_cmd_vel(self):
         linear, angular = self.arbiter.get_active_command()
