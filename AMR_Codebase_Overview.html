@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMR Codebase Overview</title>
+<style>
+  :root {
+    /* neutrals — cool paper, slight blue-grey bias */
+    --bg: #EAEEF3;
+    --surface: #FAFBFC;
+    --surface-2: #E7ECF2;
+    --inset: #EDF1F6;
+    --ink: #15202B;
+    --ink-soft: #4A586A;
+    --ink-faint: #7A8798;
+    --line: #D3DBE4;
+    --line-soft: #E1E7EE;
+    /* domain accents */
+    --compute: #0C7E8C;      /* ROS2 / Pi "thinks" */
+    --compute-tint: #DCF0F2;
+    --realtime: #B85B18;     /* firmware / Pico "reacts" */
+    --realtime-tint: #F6E7DA;
+    --console: #545CA0;      /* browser operator console */
+    --console-tint: #E6E7F5;
+    /* status (semantic, form-backed) */
+    --ok: #1E8A54;
+    --wip: #A9791A;
+    --plan: #77869A;
+    --shadow: 0 1px 2px rgba(21,32,43,.05), 0 4px 16px rgba(21,32,43,.06);
+    --shadow-lift: 0 2px 4px rgba(21,32,43,.08), 0 12px 32px rgba(21,32,43,.10);
+    --radius: 12px;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --maxw: 1120px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B1219;
+      --surface: #121C25;
+      --surface-2: #1A2632;
+      --inset: #0E1720;
+      --ink: #E4EAF1;
+      --ink-soft: #9DACBD;
+      --ink-faint: #6B7B8E;
+      --line: #26333F;
+      --line-soft: #1E2A35;
+      --compute: #37C4D4;
+      --compute-tint: #0F2A2F;
+      --realtime: #E28B45;
+      --realtime-tint: #2C1F13;
+      --console: #8C93DC;
+      --console-tint: #1B1D31;
+      --ok: #49B67C;
+      --wip: #D6A62B;
+      --plan: #7E8DA0;
+      --shadow: 0 1px 2px rgba(0,0,0,.30), 0 4px 16px rgba(0,0,0,.36);
+      --shadow-lift: 0 2px 4px rgba(0,0,0,.36), 0 14px 34px rgba(0,0,0,.44);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #EAEEF3; --surface: #FAFBFC; --surface-2: #E7ECF2; --inset: #EDF1F6;
+    --ink: #15202B; --ink-soft: #4A586A; --ink-faint: #7A8798; --line: #D3DBE4; --line-soft: #E1E7EE;
+    --compute: #0C7E8C; --compute-tint: #DCF0F2; --realtime: #B85B18; --realtime-tint: #F6E7DA;
+    --console: #545CA0; --console-tint: #E6E7F5; --ok: #1E8A54; --wip: #A9791A; --plan: #77869A;
+    --shadow: 0 1px 2px rgba(21,32,43,.05), 0 4px 16px rgba(21,32,43,.06);
+    --shadow-lift: 0 2px 4px rgba(21,32,43,.08), 0 12px 32px rgba(21,32,43,.10);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1219; --surface: #121C25; --surface-2: #1A2632; --inset: #0E1720;
+    --ink: #E4EAF1; --ink-soft: #9DACBD; --ink-faint: #6B7B8E; --line: #26333F; --line-soft: #1E2A35;
+    --compute: #37C4D4; --compute-tint: #0F2A2F; --realtime: #E28B45; --realtime-tint: #2C1F13;
+    --console: #8C93DC; --console-tint: #1B1D31; --ok: #49B67C; --wip: #D6A62B; --plan: #7E8DA0;
+    --shadow: 0 1px 2px rgba(0,0,0,.30), 0 4px 16px rgba(0,0,0,.36);
+    --shadow-lift: 0 2px 4px rgba(0,0,0,.36), 0 14px 34px rgba(0,0,0,.44);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--font-sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  a { color: var(--compute); text-decoration: none; }
+  code, .mono { font-family: var(--font-mono); }
+  ::selection { background: var(--compute); color: #fff; }
+
+  /* ---------- shell layout ---------- */
+  .shell { max-width: var(--maxw); margin: 0 auto; display: grid; grid-template-columns: 236px minmax(0,1fr); gap: 40px; padding: 0 28px 96px; }
+  .toc { position: sticky; top: 0; align-self: start; height: 100vh; padding-top: 30px; overflow-y: auto; }
+  .toc-brand { font-family: var(--font-mono); font-size: .84rem; letter-spacing: .04em; color: var(--ink-soft); margin-bottom: 18px; }
+  .toc-brand b { color: var(--ink); }
+  .toc a { display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-radius: 8px; color: var(--ink-soft); font-size: .87rem; font-weight: 500; transition: background .15s, color .15s; }
+  .toc a .tnum { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-faint); width: 15px; }
+  .toc a:hover { background: var(--surface-2); color: var(--ink); }
+  .toc a.active { background: var(--compute-tint); color: var(--compute); }
+  .toc a.active .tnum { color: var(--compute); }
+  .main { min-width: 0; padding-top: 30px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 30px 0 8px; }
+  .eyebrow { font-family: var(--font-mono); font-size: .74rem; letter-spacing: .16em; text-transform: uppercase; color: var(--compute); display: flex; align-items: center; gap: 10px; }
+  .eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--compute); display: inline-block; }
+  h1 { font-size: clamp(2rem, 4.4vw, 3rem); line-height: 1.05; letter-spacing: -.03em; margin: 16px 0 0; text-wrap: balance; font-weight: 800; }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; margin: 16px 0 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .thinks { color: var(--compute); font-weight: 600; }
+  .reacts { color: var(--realtime); font-weight: 600; }
+  .watches { color: var(--console); font-weight: 600; }
+
+  .metastrip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+  .metastrip .chip { font-family: var(--font-mono); font-size: .76rem; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--line); padding: 6px 11px; border-radius: 999px; display: inline-flex; gap: 7px; align-items: center; }
+  .metastrip .chip b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- generic section ---------- */
+  section { scroll-margin-top: 22px; padding-top: 54px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 24px; }
+  .sec-head .snum { font-family: var(--font-mono); font-size: .8rem; color: var(--ink-faint); }
+  .sec-head h2 { font-size: 1.5rem; letter-spacing: -.02em; margin: 0; font-weight: 750; }
+  .sec-intro { color: var(--ink-soft); max-width: 68ch; margin: -8px 0 26px; }
+
+  /* ---------- status badges ---------- */
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: .68rem; letter-spacing: .02em; text-transform: uppercase; padding: 3px 8px 3px 7px; border-radius: 6px; border: 1px solid; white-space: nowrap; font-weight: 600; }
+  .badge .g { font-size: .8em; line-height: 1; }
+  .badge.impl { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .badge.wip  { color: var(--wip); border-color: color-mix(in srgb, var(--wip) 38%, transparent); background: color-mix(in srgb, var(--wip) 10%, transparent); }
+  .badge.plan { color: var(--plan); border-color: color-mix(in srgb, var(--plan) 40%, transparent); background: color-mix(in srgb, var(--plan) 8%, transparent); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-top: 22px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+  .legend .lg-title { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+  .legend .lg-item { display: inline-flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--ink-soft); }
+
+  /* ---------- overview diagram ---------- */
+  .domains { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 0; margin: 6px 0 8px; }
+  .domain { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 18px 18px 20px; box-shadow: var(--shadow); border-top: 3px solid var(--dc, var(--line)); }
+  .domain.d-console { --dc: var(--console); }
+  .domain.d-rpi { --dc: var(--compute); }
+  .domain.d-pico { --dc: var(--realtime); }
+  .domain h3 { margin: 0; font-size: 1.02rem; letter-spacing: -.01em; }
+  .domain .d-sub { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-faint); margin-top: 3px; }
+  .domain p { font-size: .86rem; color: var(--ink-soft); margin: 12px 0 0; }
+  .domain ul { margin: 12px 0 0; padding-left: 16px; font-size: .82rem; color: var(--ink-soft); }
+  .domain li { margin: 3px 0; }
+  .link { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 8px; min-width: 116px; }
+  .link .lbl { font-family: var(--font-mono); font-size: .68rem; color: var(--ink-soft); text-align: center; line-height: 1.35; }
+  .link .arrow { color: var(--ink-faint); font-size: 1.1rem; letter-spacing: -2px; margin: 4px 0; }
+  .link .proto { font-size: .64rem; color: var(--ink-faint); letter-spacing: .06em; text-transform: uppercase; margin-top: 2px; }
+  @media (max-width: 860px) {
+    .domains { grid-template-columns: 1fr; }
+    .link { flex-direction: row; gap: 10px; min-width: 0; padding: 10px 0; }
+    .link .arrow { transform: rotate(90deg); }
+  }
+
+  .callout { margin-top: 22px; border-left: 3px solid var(--compute); background: var(--compute-tint); border-radius: 0 10px 10px 0; padding: 14px 18px; }
+  .callout .k { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--compute); }
+  .callout p { margin: 6px 0 0; font-size: .92rem; color: var(--ink); }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; min-width: 520px; }
+  thead th { text-align: left; font-family: var(--font-mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); position: sticky; top: 0; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; color: var(--ink-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { color: var(--ink); }
+  td .mono, th .mono { font-size: .92em; }
+  .t-topic { color: var(--compute); font-weight: 600; }
+  .tag { font-family: var(--font-mono); font-size: .72rem; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; }
+  .tag.pub { color: var(--realtime); border-color: color-mix(in srgb, var(--realtime) 40%, transparent); }
+  .tag.sub { color: var(--compute); border-color: color-mix(in srgb, var(--compute) 40%, transparent); }
+
+  /* ---------- package cards ---------- */
+  .pkgtools { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+  .btn { font-family: var(--font-mono); font-size: .74rem; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .btn:hover { background: var(--surface-2); color: var(--ink); }
+  .btn:focus-visible { outline: 2px solid var(--compute); outline-offset: 2px; }
+
+  .pkg { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 18px; overflow: hidden; border-left: 3px solid var(--pc, var(--line)); }
+  .pkg.p-ros { --pc: var(--compute); }
+  .pkg.p-fw { --pc: var(--realtime); }
+  .pkg.p-web { --pc: var(--console); }
+  .pkg-head { padding: 18px 20px 16px; }
+  .pkg-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pkg-title h3 { margin: 0; font-family: var(--font-mono); font-size: 1.02rem; letter-spacing: -.01em; color: var(--ink); }
+  .pkg-domain { font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; color: var(--pc); background: color-mix(in srgb, var(--pc) 12%, transparent); }
+  .pkg-desc { color: var(--ink-soft); font-size: .92rem; margin: 11px 0 0; max-width: 74ch; }
+  .pkg-body { padding: 0 20px 8px; display: flex; flex-direction: column; gap: 0; }
+
+  /* ---------- file details ---------- */
+  details.file { border-top: 1px solid var(--line-soft); }
+  details.file > summary { list-style: none; cursor: pointer; padding: 13px 4px; display: flex; align-items: center; gap: 12px; user-select: none; }
+  details.file > summary::-webkit-details-marker { display: none; }
+  .chev { width: 14px; height: 14px; flex: none; color: var(--ink-faint); transition: transform .18s; }
+  details.file[open] .chev { transform: rotate(90deg); }
+  .fname { font-family: var(--font-mono); font-size: .88rem; color: var(--ink); font-weight: 600; }
+  .fpurpose { color: var(--ink-soft); font-size: .84rem; flex: 1; min-width: 0; }
+  @media (max-width: 620px) { .fpurpose { display: none; } }
+  .file-inner { padding: 4px 4px 18px 26px; }
+  .file-note { font-size: .86rem; color: var(--ink-soft); margin: 0 0 14px; }
+
+  .fnlist { display: flex; flex-direction: column; gap: 0; margin: 0; }
+  .fn { display: grid; grid-template-columns: minmax(150px, 240px) 1fr; gap: 16px; padding: 9px 0; border-bottom: 1px dashed var(--line-soft); }
+  .fn:last-child { border-bottom: none; }
+  .fn .fn-sig { font-family: var(--font-mono); font-size: .82rem; color: var(--realtime); }
+  .pkg.p-ros .fn .fn-sig { color: var(--compute); }
+  .pkg.p-web .fn .fn-sig { color: var(--console); }
+  .fn .fn-doc { font-size: .86rem; color: var(--ink-soft); }
+  .fn .fn-doc .plannedtag { font-family: var(--font-mono); font-size: .68rem; color: var(--plan); border: 1px solid color-mix(in srgb, var(--plan) 40%, transparent); border-radius: 4px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+  @media (max-width: 560px) { .fn { grid-template-columns: 1fr; gap: 3px; } }
+
+  .iface { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .iface .il { font-family: var(--font-mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-right: 2px; }
+  .iface .ipill { font-family: var(--font-mono); font-size: .74rem; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--inset); }
+  .iface .ipill em { font-style: normal; color: var(--ink-faint); }
+
+  /* ---------- interaction loop diagram ---------- */
+  .loopwrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 26px; }
+  .loop-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; font-size: .8rem; color: var(--ink-soft); }
+  .loop-legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+  svg.loop { display: block; width: 100%; height: auto; max-width: 640px; margin: 0 auto; }
+  .loop .node { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+  .loop .node.rpi { stroke: var(--compute); }
+  .loop .node.pico { stroke: var(--realtime); }
+  .loop .node.web { stroke: var(--console); }
+  .loop .node.hw { stroke: var(--ink-faint); stroke-dasharray: 4 3; }
+  .loop .ntitle { fill: var(--ink); font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .loop .nsub { fill: var(--ink-faint); font-family: var(--font-mono); font-size: 10px; }
+  .loop .cmd { stroke: var(--compute); stroke-width: 1.8; fill: none; }
+  .loop .tel { stroke: var(--realtime); stroke-width: 1.8; fill: none; }
+  .loop .elabel-c { fill: var(--compute); font-family: var(--font-mono); font-size: 10.5px; }
+  .loop .elabel-t { fill: var(--realtime); font-family: var(--font-mono); font-size: 10.5px; text-anchor: end; }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } }
+  .infocard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 18px 20px; }
+  .infocard h4 { margin: 0 0 4px; font-size: 1rem; }
+  .infocard.j-web { border-top: 3px solid var(--console); }
+  .infocard.j-fw { border-top: 3px solid var(--realtime); }
+  .infocard .j-sub { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-faint); }
+  .infocard p { font-size: .88rem; color: var(--ink-soft); }
+  pre.code { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-family: var(--font-mono); font-size: .8rem; color: var(--ink); margin: 12px 0 0; line-height: 1.5; }
+  pre.code .c { color: var(--ink-faint); }
+  pre.code .dir { color: var(--realtime); }
+  pre.code .dir.up { color: var(--compute); }
+
+  /* trace */
+  .trace { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 14px; }
+  .trace h4 { margin: 0 0 12px; font-size: .96rem; display: flex; align-items: center; gap: 9px; }
+  .trace h4 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; font-family: var(--font-mono); font-size: .78rem; }
+  .flow .step { background: var(--inset); border: 1px solid var(--line-soft); border-radius: 6px; padding: 4px 9px; color: var(--ink); }
+  .flow .step em { font-style: normal; color: var(--ink-faint); font-size: .9em; display: block; }
+  .flow .sep { color: var(--ink-faint); }
+
+  .takeaway { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: start; margin-top: 26px; padding: 18px 20px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+  .takeaway .tk-key { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--realtime); writing-mode: vertical-rl; transform: rotate(180deg); align-self: stretch; }
+  .takeaway p { margin: 0; font-size: .96rem; color: var(--ink); }
+  .takeaway p b { color: var(--compute); }
+  .takeaway p .amber { color: var(--realtime); font-weight: 600; }
+
+  /* appendix bringup */
+  .bringup { display: flex; flex-direction: column; gap: 8px; }
+  .bstep { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 11px 14px; box-shadow: var(--shadow); }
+  .bstep .bn { font-family: var(--font-mono); font-size: .82rem; color: var(--compute); font-weight: 700; }
+  .bstep .bd { font-size: .86rem; color: var(--ink-soft); }
+  .bstep .bd b { color: var(--ink); font-family: var(--font-mono); font-weight: 600; font-size: .95em; }
+
+  .glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .gterm { background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 13px 15px; box-shadow: var(--shadow); }
+  .gterm .gt { font-family: var(--font-mono); font-size: .84rem; color: var(--ink); font-weight: 600; }
+  .gterm .gd { font-size: .82rem; color: var(--ink-soft); margin-top: 4px; }
+
+  footer { max-width: var(--maxw); margin: 0 auto; padding: 40px 28px 60px; color: var(--ink-faint); font-size: .8rem; border-top: 1px solid var(--line); }
+  footer .mono { color: var(--ink-soft); }
+
+  /* mobile TOC → top bar */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; gap: 0; padding: 0 20px 72px; }
+    .toc { position: sticky; top: 0; height: auto; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); z-index: 20; display: flex; gap: 4px; overflow-x: auto; white-space: nowrap; }
+    .toc-brand { display: none; }
+    .toc a { flex: none; padding: 8px 12px; }
+    .toc a .tnum { display: none; }
+    .main { padding-top: 8px; }
+    .fn { grid-template-columns: 1fr; gap: 3px; }
+  }
+</style>
+
+<div class="shell">
+  <nav class="toc" aria-label="Contents">
+    <div class="toc-brand">CAPCO&nbsp;·&nbsp;<b>AMR</b><br>codebase overview</div>
+    <a href="#overview" data-sec="overview"><span class="tnum">01</span> Overview</a>
+    <a href="#glance" data-sec="glance"><span class="tnum">02</span> At a glance</a>
+    <a href="#ros2" data-sec="ros2"><span class="tnum">03</span> ROS2 packages</a>
+    <a href="#firmware" data-sec="firmware"><span class="tnum">04</span> Pico firmware</a>
+    <a href="#console" data-sec="console"><span class="tnum">05</span> Operator console</a>
+    <a href="#interact" data-sec="interact"><span class="tnum">06</span> How it interacts</a>
+    <a href="#wire" data-sec="wire"><span class="tnum">07</span> Wire protocol</a>
+    <a href="#appendix" data-sec="appendix"><span class="tnum">08</span> Appendix</a>
+  </nav>
+
+  <main class="main">
+    <!-- ============ HERO ============ -->
+    <header class="hero" id="top">
+      <div class="eyebrow">Autonomous Mobile Robot · target architecture</div>
+      <h1>The AMR codebase, end to end</h1>
+      <p class="lede">A differential-drive robot built as three cooperating worlds: the Raspberry&nbsp;Pi <span class="thinks">thinks</span> (ROS2 / Python), the Pico <span class="reacts">reacts</span> (MicroPython, real-time I/O), and the browser console <span class="watches">watches</span>. This walks every package, every file, every function — and how they talk once the build is complete.</p>
+      <div class="metastrip">
+        <span class="chip"><b>9</b> ROS2 packages</span>
+        <span class="chip"><b>2</b> compute domains + browser</span>
+        <span class="chip"><b>2</b> JSON boundaries</span>
+        <span class="chip mono">Pi · Pico · Console</span>
+      </div>
+      <div class="legend" role="note" aria-label="Status legend">
+        <span class="lg-title">Build status</span>
+        <span class="lg-item"><span class="badge impl"><span class="g">●</span>Implemented</span> runs today</span>
+        <span class="lg-item"><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span> scaffolded, being wired</span>
+        <span class="lg-item"><span class="badge plan"><span class="g">○</span>Planned</span> designed, not yet built</span>
+      </div>
+    </header>
+
+    <!-- ============ 01 OVERVIEW ============ -->
+    <section id="overview">
+      <div class="sec-head"><span class="snum">01</span><h2>System overview</h2></div>
+      <p class="sec-intro">One robot, split across two computers plus a dashboard. The split isn't arbitrary: Linux is not a real-time OS, so anything that must hit a deadline every few milliseconds — motor PWM, encoder polling, the lift PID, fail-safes — lives on the Pico, which has no OS to pause it. Everything that needs to "think" lives on the Pi.</p>
+
+      <div class="domains">
+        <div class="domain d-console">
+          <h3>Operator Console</h3>
+          <div class="d-sub">browser · JS (ES modules)</div>
+          <p>Live dashboard — map, battery, lift/fault status, and WASD teleop.</p>
+          <ul><li>Renders telemetry</li><li>Sends drive commands</li></ul>
+        </div>
+        <div class="link">
+          <span class="lbl">operator ⇄ robot</span>
+          <span class="arrow">⇆</span>
+          <span class="proto">WebSocket JSON<br>:8765</span>
+        </div>
+        <div class="domain d-rpi">
+          <h3>Raspberry Pi</h3>
+          <div class="d-sub">Linux · ROS2 · Python</div>
+          <p>The "thinking" half: SLAM, Nav2, odometry math, command arbitration, supervisor state machine, BMS parsing, the console gateway.</p>
+          <ul><li>9 ROS2 packages</li><li>Typed pub/sub graph</li></ul>
+        </div>
+        <div class="link">
+          <span class="lbl">Pi ⇄ Pico</span>
+          <span class="arrow">⇆</span>
+          <span class="proto">USB-serial JSON<br>115200 baud</span>
+        </div>
+        <div class="domain d-pico">
+          <h3>Raspberry Pi Pico</h3>
+          <div class="d-sub">no OS · MicroPython</div>
+          <p>The "reacting" half: motor PWM, AS5600 encoders, lift PID (2nd core), siren/light GPIO, and a two-layer watchdog.</p>
+          <ul><li>Core 0: comms + drive</li><li>Core 1: lift PID</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 02 AT A GLANCE ============ -->
+    <section id="glance">
+      <div class="sec-head"><span class="snum">02</span><h2>Packages at a glance</h2></div>
+      <p class="sec-intro">Eleven build units: nine ROS2 packages in the colcon workspace, the Pico firmware (plain MicroPython, not a ROS2 package), and the browser console. Colour marks the compute domain; the badge marks build progress.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Unit</th><th>Domain</th><th>Responsibility</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td><span class="mono t-topic">amr_msgs</span></td><td><span class="tag sub">ROS2</span></td><td>Shared <code>.msg</code>/<code>.srv</code>/<code>.action</code> interfaces — the typed contract every other package builds against.</td><td><span class="badge impl"><span class="g">●</span>Implemented</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_pico_bridge</span></td><td><span class="tag sub">ROS2</span></td><td>Sole owner of the Pico serial port; translates the JSON wire protocol ⇄ ROS2 topics.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_navigation_move</span></td><td><span class="tag sub">ROS2</span></td><td><code>cmd_vel</code> → per-wheel setpoints (kinematics live here), and encoder ticks → <code>/odom</code> + TF.</td><td><span class="badge impl"><span class="g">●</span>Implemented</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_navigation_map</span></td><td><span class="tag sub">ROS2</span></td><td>SLAM Toolbox + Nav2 config &amp; launch — now configured. No custom nodes.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_navigation_imu</span></td><td><span class="tag sub">ROS2</span></td><td>Placeholder — reserved for future IMU-based localization.</td><td><span class="badge plan"><span class="g">○</span>Planned</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_lift</span></td><td><span class="tag sub">ROS2</span></td><td>Decides lift target height, tracks reported state (PID itself is on the Pico).</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_error</span></td><td><span class="tag sub">ROS2</span></td><td>Maps faults → siren/light patterns (GPIO drive itself is on the Pico).</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_charging</span></td><td><span class="tag sub">ROS2</span></td><td>Polls the BMS over its own UART/I2C link and publishes battery telemetry.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_command</span></td><td><span class="tag sub">ROS2</span></td><td>External gateway: arbitrates console commands, streams telemetry out over a WebSocket.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic">amr_engine</span></td><td><span class="tag sub">ROS2</span></td><td>Coordinator: launches every package; supervisor state machine (IDLE/NAV/LIFT/ERROR).</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic" style="color:var(--realtime)">pico_firmware</span></td><td><span class="tag pub">Pico</span></td><td>MicroPython on the RP2040 — real-time motor/encoder/lift/signal I/O + fail-safes.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+            <tr><td><span class="mono t-topic" style="color:var(--console)">operator_console</span></td><td><span class="tag" style="color:var(--console);border-color:color-mix(in srgb,var(--console) 40%,transparent)">Browser</span></td><td>Browser dashboard + teleop over the WebSocket.</td><td><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 03 ROS2 PACKAGES ============ -->
+    <section id="ros2">
+      <div class="sec-head"><span class="snum">03</span><h2>ROS2 packages — files &amp; functions</h2></div>
+      <p class="sec-intro">The colcon workspace at <code class="mono">AMR_Engine_Package/src/</code>. Every file's functions are collapsed by default — expand one for the detail. Function colour follows the package's domain.</p>
+      <div class="pkgtools">
+        <button class="btn" data-expand="ros2">Expand all</button>
+        <button class="btn" data-collapse="ros2">Collapse all</button>
+      </div>
+      <div data-group="ros2">
+
+        <!-- amr_msgs -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_msgs</h3><span class="pkg-domain">ROS2 · ament_cmake</span><span class="badge impl"><span class="g">●</span>Implemented</span></div>
+            <p class="pkg-desc">The one package that isn't plain Python: <code>rosidl</code> compiles these <code>.msg</code>/<code>.srv</code>/<code>.action</code> text files into real typed classes at build time. This is the contract every other package imports.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">msg/ — 6 topic messages</span><span class="fpurpose">strongly-typed data broadcast on topics</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">EncoderTicks</div><div class="fn-doc"><code>header</code>, <code>int64 left_ticks</code>, <code>int64 right_ticks</code>, <code>uint32 dt_ms</code> — raw wheel counts from the Pico.</div></div>
+                  <div class="fn"><div class="fn-sig">WheelSetpoints</div><div class="fn-doc"><code>header</code>, <code>float32 left_speed</code>, <code>float32 right_speed</code> — per-wheel targets to the Pico.</div></div>
+                  <div class="fn"><div class="fn-sig">LiftCommand</div><div class="fn-doc"><code>header</code>, <code>float32 target_position</code> — desired lift height.</div></div>
+                  <div class="fn"><div class="fn-sig">LiftState</div><div class="fn-doc"><code>header</code>, <code>float32 position</code>, <code>bool limit_upper</code>, <code>bool limit_lower</code> — reported lift state.</div></div>
+                  <div class="fn"><div class="fn-sig">SignalCommand</div><div class="fn-doc"><code>header</code>, <code>bool siren_on</code>, <code>bool light_on</code>, <code>uint8 pattern_id</code> — fault signalling.</div></div>
+                  <div class="fn"><div class="fn-sig">PicoStatus</div><div class="fn-doc"><code>uptime_ms</code>, <code>last_rpi_msg_age_ms</code>, <code>watchdog_resets</code>, <code>free_mem_bytes</code> — Pico health.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">srv/ — 7 services</span><span class="fpurpose">request → single response (REST-like)</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">GetPicoStatus</div><div class="fn-doc">— → uptime / msg-age / watchdog resets / free mem / <code>available</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">GetRobotState</div><div class="fn-doc">— → <code>string state</code>, <code>string[] active_faults</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">TriggerEstop</div><div class="fn-doc"><code>bool release</code> → <code>bool success</code> — assert/clear emergency stop.</div></div>
+                  <div class="fn"><div class="fn-sig">SetDriveLimits</div><div class="fn-doc"><code>max_linear_mps</code>, <code>max_angular_rps</code> → <code>bool accepted</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">SetLiftTarget</div><div class="fn-doc"><code>float32 target_position</code> → <code>bool accepted</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">ResetOdometry</div><div class="fn-doc"><code>x</code>, <code>y</code>, <code>theta</code> → <code>bool success</code> — re-seed the pose.</div></div>
+                  <div class="fn"><div class="fn-sig">AcknowledgeFault</div><div class="fn-doc"><code>string fault_id</code> → <code>bool success</code>.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">action/ — 2 actions</span><span class="fpurpose">long-running goal + feedback + result</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">NavigateToGoal</div><div class="fn-doc">goal <code>x/y/theta</code> · feedback <code>current_x/y</code>, <code>distance_remaining</code> · result <code>success</code>, <code>outcome</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">MoveLift</div><div class="fn-doc">goal <code>target_position</code> · feedback <code>current_position</code> + limits · result <code>success</code>, <code>final_position</code>.</div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_pico_bridge -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_pico_bridge</h3><span class="pkg-domain">ROS2 · ament_python</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">The only code allowed to touch the Pico's serial port. It turns outbound ROS2 command topics into JSON frames and republishes inbound JSON telemetry as typed ROS2 messages. Drive + encoder/status paths run today; lift/signal/estop/fault handling is being wired.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">bridge_node.py</span><span class="fpurpose">the ROS2 ⇄ serial translator node</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">PicoBridgeNode.__init__</div><div class="fn-doc">Declares <code>serial_port</code>/<code>baudrate</code> params, opens the <code>SerialTransport</code>, sets up pubs/subs, seq counters and timers.</div></div>
+                  <div class="fn"><div class="fn-sig">_on_wheel_setpoints</div><div class="fn-doc">On <code>/wheel_setpoints</code>: clamps speeds to [-1,1], builds a <code>drive_cmd</code> JSON frame, writes it to serial.</div></div>
+                  <div class="fn"><div class="fn-sig">_send_heartbeat</div><div class="fn-doc">10&nbsp;Hz timer — emits a <code>heartbeat</code> frame so the Pico's watchdog knows the Pi is alive.</div></div>
+                  <div class="fn"><div class="fn-sig">_drain_rx</div><div class="fn-doc">100&nbsp;Hz timer — pulls buffered serial lines and dispatches each to the line handler.</div></div>
+                  <div class="fn"><div class="fn-sig">_on_serial_line</div><div class="fn-doc">Decodes one JSON frame, checks seq continuity, republishes <code>encoder_ticks</code>/<code>pico_status</code> as ROS2 messages.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy init → spin → shutdown entry point.</div></div>
+                </div>
+                <div class="iface">
+                  <span class="il">Pub</span><span class="ipill">/encoder_ticks <em>EncoderTicks</em></span><span class="ipill">/pico_status <em>PicoStatus</em></span>
+                  <span class="il">Sub</span><span class="ipill">/wheel_setpoints <em>WheelSetpoints</em></span>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">protocol_codec.py</span><span class="fpurpose">the wire-protocol contract (RPi side)</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Defines the message-type string constants and the JSON framing. Mirrored byte-for-byte in the Pico's <code>comms_protocol.py</code>.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">CMD_* / TEL_*</div><div class="fn-doc">Constants: <code>heartbeat</code>, <code>drive_cmd</code>, <code>lift_cmd</code>, <code>signal_cmd</code>, <code>estop_cmd</code> (down); <code>encoder_ticks</code>, <code>lift_state</code>, <code>signal_state</code>, <code>pico_status</code>, <code>fault_event</code> (up).</div></div>
+                  <div class="fn"><div class="fn-sig">encode(msg)</div><div class="fn-doc"><code>json.dumps</code> the dict, append <code>\n</code>, UTF-8 encode → bytes.</div></div>
+                  <div class="fn"><div class="fn-sig">decode(line)</div><div class="fn-doc">Strip, UTF-8 decode, <code>json.loads</code> → dict.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">serial_transport.py</span><span class="fpurpose">owns the physical port + reader thread</span></summary>
+              <div class="file-inner">
+                <p class="file-note">A thread-safe <code>pyserial</code> wrapper: a background reader buffers newline-delimited frames into a bounded queue with oldest-frame eviction (backpressure).</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">SerialTransport.__init__</div><div class="fn-doc">Stores config, creates the bounded RX queue (max 1000), stop event and write lock.</div></div>
+                  <div class="fn"><div class="fn-sig">connected / last_error</div><div class="fn-doc">Properties — port open &amp; reader alive; last exception that killed the reader.</div></div>
+                  <div class="fn"><div class="fn-sig">open</div><div class="fn-doc">Opens <code>serial.Serial</code> (0.1s timeout), starts the daemon reader thread.</div></div>
+                  <div class="fn"><div class="fn-sig">_reader_thread_body</div><div class="fn-doc">Loops <code>readline()</code>; drops partial/empty frames; enqueues complete ones, evicting oldest when full.</div></div>
+                  <div class="fn"><div class="fn-sig">write / read_line / poll_lines</div><div class="fn-doc">Locked raw write; blocking single-frame read; non-blocking drain of all queued frames.</div></div>
+                  <div class="fn"><div class="fn-sig">close</div><div class="fn-doc">Signals stop, joins the reader, closes the port.</div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_navigation -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_navigation</h3><span class="pkg-domain">ROS2 · move / map / imu</span><span class="badge wip"><span class="g">◐</span>In&nbsp;progress</span></div>
+            <p class="pkg-desc">Three colcon packages nested under one directory. <b>move</b> is the working motion core; <b>map</b> now carries a configured SLAM Toolbox pipeline plus a partial Nav2 config; <b>imu</b> is a reserved placeholder.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">move/diff_drive_kinematics.py</span><span class="fpurpose">shared kinematics + calibration</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Pure-math module holding the robot's calibration (<code>WHEEL_RADIUS_M=0.127</code>, <code>TRACK_WIDTH_M=0.800</code>, <code>TICKS_PER_REV=4096</code>). Kept on the Pi, not the Pico.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">twist_to_wheel_speeds</div><div class="fn-doc">Body (linear, angular) → left/right wheel speeds (m/s) using the track width.</div></div>
+                  <div class="fn"><div class="fn-sig">ticks_to_pose_delta</div><div class="fn-doc">Δencoder ticks → local (dx, dy, dθ) pose delta (arc-based).</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">move/drive_controller_node.py</span><span class="fpurpose">/cmd_vel → per-wheel setpoints</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">DriveControllerNode.__init__</div><div class="fn-doc">Creates the <code>/wheel_setpoints</code> publisher and <code>/cmd_vel</code> subscription.</div></div>
+                  <div class="fn"><div class="fn-sig">_on_cmd_vel</div><div class="fn-doc">Reads <code>linear.x</code>/<code>angular.z</code>, converts via kinematics, stamps <code>base_link</code>, publishes <code>WheelSetpoints</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Pub</span><span class="ipill">/wheel_setpoints <em>WheelSetpoints</em></span><span class="il">Sub</span><span class="ipill">/cmd_vel <em>Twist</em></span></div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">move/odometry_node.py</span><span class="fpurpose">encoder ticks → /odom + TF</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">OdometryNode.__init__</div><div class="fn-doc">Inits pose state + last-tick baselines, creates the <code>/odom</code> publisher, a TF broadcaster, and the <code>/encoder_ticks</code> subscription.</div></div>
+                  <div class="fn"><div class="fn-sig">_on_encoder_ticks</div><div class="fn-doc">Diffs the cumulative tick counts into per-callback deltas (seeds the baseline on the first message), converts to a pose delta, rotates into the global frame, publishes <code>Odometry</code> + broadcasts <code>odom→base_link</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Pub</span><span class="ipill">/odom <em>Odometry</em></span><span class="ipill">TF <em>odom→base_link</em></span><span class="il">Sub</span><span class="ipill">/encoder_ticks <em>EncoderTicks</em></span></div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">move/fake_pico_node.py</span><span class="fpurpose">hardware-free Pico simulator</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Stands in for the Pico so the whole stack runs without hardware — integrates wheel setpoints into fake encoder ticks.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">FakePicoNode.__init__</div><div class="fn-doc">Inits stored speeds + tick counts; creates the <code>/encoder_ticks</code> publisher, <code>/wheel_setpoints</code> sub, and a 50&nbsp;ms timer.</div></div>
+                  <div class="fn"><div class="fn-sig">_on_wheel_setpoints</div><div class="fn-doc">Stores the latest commanded left/right speeds.</div></div>
+                  <div class="fn"><div class="fn-sig">_timer_callback</div><div class="fn-doc">Every 50&nbsp;ms integrates speed×dt into tick increments and publishes <code>EncoderTicks</code>.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">map/ — SLAM &amp; Nav2 launch + config</span><span class="fpurpose">no custom nodes, third-party bringup</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">slam.launch.py</div><div class="fn-doc"><code>generate_launch_description</code> — launches <code>slam_toolbox</code>'s async node with the local params file.</div></div>
+                  <div class="fn"><div class="fn-sig">nav2.launch.py</div><div class="fn-doc"><code>generate_launch_description</code> — includes <code>nav2_bringup</code>'s navigation launch with the local params.</div></div>
+                  <div class="fn"><div class="fn-sig">config/*.yaml</div><div class="fn-doc"><code>slam_toolbox_params.yaml</code> — configured: online-async, 0.05&nbsp;m resolution, 12&nbsp;m range, scan matching + loop closure. <code>nav2_params.yaml</code> — controller (10&nbsp;Hz, <code>/odom</code> + <code>/cmd_vel</code>) + planner set; costmaps/BT still to add.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">imu/ — placeholder <span class="fn-doc"><span class="plannedtag">planned</span></span></span><span class="fpurpose">reserved for IMU localization</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Empty <code>config/</code> and <code>launch/</code> plus build scaffolding only — reserved in case IMU-based localization is added alongside or instead of SLAM Toolbox. No nodes yet.</p>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_lift -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_lift</h3><span class="pkg-domain">ROS2 · ament_python</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">Decides <em>what height</em> the lift should reach and tracks its reported state; the PWM/limit-switch/PID loop itself lives on the Pico's second core.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">lift_control_node.py</span><span class="fpurpose">lift target decision + state tracking</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">LiftControlNode.__init__</div><div class="fn-doc">Initializes the <code>amr_lift</code> node and its lift command/state plumbing.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Pub</span><span class="ipill">→bridge <em>LiftCommand</em></span><span class="il">Sub</span><span class="ipill"><em>LiftState</em></span><span class="il">Srv</span><span class="ipill">SetLiftTarget</span><span class="il">Action</span><span class="ipill">MoveLift</span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_error -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_error</h3><span class="pkg-domain">ROS2 · ament_python</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">The policy layer for faults — decides which fault maps to which siren/light pattern. The GPIO drive itself is on the Pico.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">signal_system_node.py</span><span class="fpurpose">fault → siren/light pattern policy</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">SignalSystemNode.__init__</div><div class="fn-doc">Initializes the <code>amr_error</code> node; consumes diagnostics and emits signal commands.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Sub</span><span class="ipill"><em>DiagnosticArray</em></span><span class="ipill">fault_event</span><span class="il">Pub</span><span class="ipill">→bridge <em>SignalCommand</em></span></div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_charging -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_charging</h3><span class="pkg-domain">ROS2 · ament_python</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">Battery telemetry. The BMS talks directly to the Pi over its own UART/I2C — <em>not</em> through the Pico serial link.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">bms_node.py</span><span class="fpurpose">polls the BMS, publishes battery state</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">BmsNode.__init__</div><div class="fn-doc">Initializes the <code>amr_charging</code> node; opens the BMS link and publishes telemetry on a poll loop.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Pub</span><span class="ipill"><em>BatteryState</em></span><span class="ipill">low-battery events</span></div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">bms_protocol.py</span><span class="fpurpose">BMS-specific frame parser</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">parse_frame(raw)</div><div class="fn-doc">Parses a raw BMS UART frame (e.g. Daly/JBD) into a dict, kept separate from the Pico wire protocol. <span class="plannedtag">planned</span></div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_command -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_command</h3><span class="pkg-domain">ROS2 · gateway</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">The robot's front door. It arbitrates commands from the operator console (and future input sources), forwards decisions into the ROS2 graph, and streams live telemetry back out over a WebSocket. The drive path is fully wired; telemetry relay + nav/estop are being added.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">command_gateway_node.py</span><span class="fpurpose">arbitration + /cmd_vel publishing</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">OperatorInputArbiter</div><div class="fn-doc">Thread-safe holder of the latest command — designed so joystick/autonomy sources can be arbitrated later without API changes.</div></div>
+                  <div class="fn"><div class="fn-sig">·submit_command</div><div class="fn-doc">Stores the latest (linear, angular) under lock (<code>source</code> reserved for arbitration).</div></div>
+                  <div class="fn"><div class="fn-sig">·get_active_command</div><div class="fn-doc">Returns the current (linear, angular) tuple under lock.</div></div>
+                  <div class="fn"><div class="fn-sig">CommandGatewayNode.__init__</div><div class="fn-doc">Spins up the WebSocket server (daemon thread), creates the arbiter + <code>/cmd_vel</code> publisher, starts a 100&nbsp;ms publish timer.</div></div>
+                  <div class="fn"><div class="fn-sig">·_run_ws</div><div class="fn-doc">Runs the async WebSocket server on the background thread.</div></div>
+                  <div class="fn"><div class="fn-sig">·_on_ws_frame</div><div class="fn-doc">On a <code>drive</code> frame, submits the linear/angular values to the arbiter.</div></div>
+                  <div class="fn"><div class="fn-sig">·_publish_cmd_vel</div><div class="fn-doc">Timer — reads the active command, builds a <code>Twist</code>, publishes at 10&nbsp;Hz.</div></div>
+                </div>
+                <div class="iface"><span class="il">Pub</span><span class="ipill">/cmd_vel <em>Twist</em></span><span class="il">Sub</span><span class="ipill">/map · battery · status</span><span class="il">Action</span><span class="ipill">NavigateToGoal</span><span class="il">Srv</span><span class="ipill">TriggerEstop</span></div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">websocket_server.py</span><span class="fpurpose">async WS server on :8765</span></summary>
+              <div class="file-inner">
+                <p class="file-note">The generic transport to the browser — binds <code>0.0.0.0:8765</code>, JSON in and out.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">WebsocketServer.__init__</div><div class="fn-doc">Stores host/port, the live connection set, and a nullable message callback.</div></div>
+                  <div class="fn"><div class="fn-sig">_handle_client</div><div class="fn-doc">Tracks the connection; <code>json.loads</code> each inbound frame and invokes the callback; cleans up on disconnect.</div></div>
+                  <div class="fn"><div class="fn-sig">start</div><div class="fn-doc">Serves on host/port and awaits forever.</div></div>
+                  <div class="fn"><div class="fn-sig">broadcast(dict)</div><div class="fn-doc"><code>json.dumps</code> and fan-out to every connected client; drops any that error on send.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">map_encoder.py</span><span class="fpurpose">compress the occupancy grid for the wire</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">encode_occupancy_grid(grid)</div><div class="fn-doc">Compresses a <code>nav_msgs/OccupancyGrid</code> into a compact form (e.g. PNG) so the map streams to the browser instead of the raw int8 array. <span class="plannedtag">planned</span></div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+        <!-- amr_engine -->
+        <article class="pkg p-ros">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>amr_engine</h3><span class="pkg-domain">ROS2 · coordinator</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">The coordinator. Its launch file is the literal "load every package" entry point; its state machine is the robot-wide supervisor that aggregates diagnostics and decides overall state. Launch is complete; the supervisor logic is being built.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">launch/amr_engine.launch.py</span><span class="fpurpose">brings up the whole stack</span></summary>
+              <div class="file-inner">
+                <p class="file-note"><code>generate_launch_description</code> starts 8 nodes across 6 packages: <code>bridge_node</code>, <code>drive_controller</code>, <code>odometry</code>, <code>lift_control_node</code>, <code>signal_system_node</code>, <code>bms_node</code>, <code>command_gateway_node</code>, <code>amr_engine</code>. SLAM/Nav2 launch separately (swapped for mapping vs. localization).</p>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">state_machine_node.py</span><span class="fpurpose">supervisor: IDLE / NAV / LIFT / ERROR</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">states</div><div class="fn-doc">Module constants: <code>IDLE</code>, <code>NAVIGATING</code>, <code>LIFTING</code>, <code>ERROR</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">StateMachineNode.__init__</div><div class="fn-doc">Creates a <code>DiagnosticsAggregator</code>, sets initial state <code>IDLE</code>; subscribes to per-subsystem diagnostics.</div></div>
+                  <div class="fn"><div class="fn-sig">main</div><div class="fn-doc">rclpy entry point.</div></div>
+                </div>
+                <div class="iface"><span class="il">Sub</span><span class="ipill"><em>DiagnosticArray</em></span><span class="il">Srv</span><span class="ipill">GetRobotState</span><span class="ipill">AcknowledgeFault</span><span class="il">Action</span><span class="ipill">NavigateToGoal</span><span class="ipill">MoveLift</span></div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">diagnostics_aggregator.py · amr_engine.py</span><span class="fpurpose">health rollup + thin entry wrapper</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">DiagnosticsAggregator.update</div><div class="fn-doc">Stores/overwrites the latest diagnostic per source key.</div></div>
+                  <div class="fn"><div class="fn-sig">·has_active_fault</div><div class="fn-doc">Reports whether any subsystem currently has an active fault. <span class="plannedtag">planned</span></div></div>
+                  <div class="fn"><div class="fn-sig">amr_engine.py</div><div class="fn-doc">Thin executable — imports and calls the state machine node's <code>main</code>.</div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ 04 FIRMWARE ============ -->
+    <section id="firmware">
+      <div class="sec-head"><span class="snum">04</span><h2>Pico firmware — the real-time half</h2></div>
+      <p class="sec-intro">Plain MicroPython flashed onto the RP2040 — not a ROS2 package. Two cores run in parallel: <b>core&nbsp;0</b> handles serial comms, motor drive and encoder reads; <b>core&nbsp;1</b> runs the lift PID independently so the lift can hold arbitrary positions without stalling the comms loop.</p>
+      <div class="pkgtools">
+        <button class="btn" data-expand="fw">Expand all</button>
+        <button class="btn" data-collapse="fw">Collapse all</button>
+      </div>
+      <div data-group="fw">
+        <article class="pkg p-fw">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>pico_firmware/</h3><span class="pkg-domain">MicroPython · RP2040</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">Motor drive, encoder reads and both watchdog layers work today; the lift PID, siren/light GPIO and most telemetry types are being implemented.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">main.py <span class="fn-doc">· core 0</span></span><span class="fpurpose">boot, serial loop, telemetry, spawns core 1</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">main()</div><div class="fn-doc">Instantiates every driver, starts the lift PID on core 1, opens UART, then loops: feed HW watchdog, check heartbeat, accumulate serial bytes, split on <code>\n</code>, dispatch by <code>type</code>, and emit encoder telemetry on an interval.</div></div>
+                  <div class="fn"><div class="fn-sig">handled: drive_cmd</div><div class="fn-doc">Reads <code>left</code>/<code>right</code> → <code>motor_driver.set_speeds()</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">handled: estop_cmd</div><div class="fn-doc">→ <code>motor_driver.stop()</code>. <code>heartbeat</code> resets the watchdog.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">comms_protocol.py</span><span class="fpurpose">wire-protocol contract (Pico mirror)</span></summary>
+              <div class="file-inner">
+                <p class="file-note">The Pico-side twin of <code>protocol_codec.py</code> — same type constants, same <code>encode</code>/<code>decode</code>. Docstring contract: every frame carries <code>type</code> + <code>seq</code>; telemetry adds <code>ts</code> = device <code>ticks_ms()</code>.</p>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">motor_driver.py <span class="fn-doc">· core 0</span></span><span class="fpurpose">dual-motor PWM + direction</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Two PWM channels at 20&nbsp;kHz + direction pins (GP2–GP5). 16-bit duty.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">MotorDriver.__init__</div><div class="fn-doc">Sets up both PWM channels + direction pins; calls <code>stop()</code> to start de-energized.</div></div>
+                  <div class="fn"><div class="fn-sig">set_speeds(l, r)</div><div class="fn-doc">Clamps each to [-1,1]; direction pin encodes sign; <code>duty_u16(|speed|×65535)</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">stop()</div><div class="fn-doc">Zeros both duties + forces direction low — hard stop, no ramp.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">encoder_reader.py <span class="fn-doc">· core 0</span></span><span class="fpurpose">dual AS5600 magnetic encoders (I2C)</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Left on I2C0 (GP4/GP5), right on I2C1 (GP6/GP7), both 400&nbsp;kHz, addr <code>0x36</code>. 12-bit angle (0–4095) from register <code>0x0C</code>.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">_read_angle(i2c)</div><div class="fn-doc">Reads 2 bytes from reg <code>0x0C</code>, combines into the 12-bit angle.</div></div>
+                  <div class="fn"><div class="fn-sig">EncoderReader.__init__</div><div class="fn-doc">Opens both I2C buses, seeds the previous-angle baselines.</div></div>
+                  <div class="fn"><div class="fn-sig">read_ticks()</div><div class="fn-doc">Signed delta per wheel, correcting 0↔4095 wrap-around via a ±2048 half-range test.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">actuator_control.py <span class="fn-doc">· core 1</span></span><span class="fpurpose">closed-loop lift PID on the 2nd core</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Runs its PID loop on core 1 via <code>_thread</code>, with a lock-protected target so the comms loop can update it safely.</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">ActuatorControl.__init__</div><div class="fn-doc">Sets target = none, allocates the lock; lift hardware init.</div></div>
+                  <div class="fn"><div class="fn-sig">start()</div><div class="fn-doc">Launches the PID loop on the second core.</div></div>
+                  <div class="fn"><div class="fn-sig">set_target(pos)</div><div class="fn-doc">Stores the target height under lock.</div></div>
+                  <div class="fn"><div class="fn-sig">get_state()</div><div class="fn-doc">Reports position + limit-switch state (source of <code>lift_state</code> telemetry). <span class="plannedtag">planned</span></div></div>
+                  <div class="fn"><div class="fn-sig">_pid_loop()</div><div class="fn-doc">The core-1 PID loop driving PWM toward the target. <span class="plannedtag">planned</span></div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">signal_io.py</span><span class="fpurpose">siren + warning-light GPIO</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">SignalIO.__init__</div><div class="fn-doc">Sets up the siren + light output pins.</div></div>
+                  <div class="fn"><div class="fn-sig">set(siren, light)</div><div class="fn-doc">Drives the siren/light outputs. <span class="plannedtag">planned</span></div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">watchdog.py <span class="fn-doc">· core 0</span></span><span class="fpurpose">two-layer fail-safe</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Layer 1: heartbeat-loss watchdog (Pi went quiet → stop). Layer 2: hardware WDT (Pico's own runtime hangs → chip self-resets).</p>
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">Watchdog.__init__</div><div class="fn-doc">Stores driver refs, seeds the last-message timestamp, instantiates the hardware WDT.</div></div>
+                  <div class="fn"><div class="fn-sig">on_rpi_message()</div><div class="fn-doc">Refreshes the last-heard-from-Pi timestamp (proof of life).</div></div>
+                  <div class="fn"><div class="fn-sig">feed_hardware_wdt()</div><div class="fn-doc">Feeds the hardware WDT each loop iteration.</div></div>
+                  <div class="fn"><div class="fn-sig">check_heartbeat()</div><div class="fn-doc">If silence exceeds the timeout, trips once; returns True on the trip edge.</div></div>
+                  <div class="fn"><div class="fn-sig">_trip()</div><div class="fn-doc">Stops motors + turns on siren/light; <b>the lift is deliberately held</b>, not moved.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">config.py</span><span class="fpurpose">pin assignments + tunables</span></summary>
+              <div class="file-inner">
+                <p class="file-note">All pins + constants in one place: motor pins GP2–GP5, encoders on I2C0/I2C1 (GP4–GP7), lift PWM/dir GP24/25, <code>SERIAL_BAUDRATE=115200</code>, <code>HEARTBEAT_TIMEOUT_MS=500</code>, <code>HARDWARE_WDT_TIMEOUT_MS=8000</code>. Siren/light + PID gains still placeholder.</p>
+              </div>
+            </details>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ 05 CONSOLE ============ -->
+    <section id="console">
+      <div class="sec-head"><span class="snum">05</span><h2>Operator console — the browser dashboard</h2></div>
+      <p class="sec-intro">A plain ES-module frontend at <code>AMR_Operator_Console/frontend/</code>. It opens a WebSocket to <code>amr_command</code>, renders inbound telemetry into panels, and streams WASD/teleop drive frames back. Teleop works today; the render panels are being filled in.</p>
+      <div class="pkgtools">
+        <button class="btn" data-expand="web">Expand all</button>
+        <button class="btn" data-collapse="web">Collapse all</button>
+      </div>
+      <div data-group="web">
+        <article class="pkg p-web">
+          <div class="pkg-head">
+            <div class="pkg-title"><h3>frontend/</h3><span class="pkg-domain">Browser · JS ES modules</span><span class="badge wip"><span class="g">◐</span>In progress</span></div>
+            <p class="pkg-desc">One canvas for the map, three panels (status, battery, teleop), and a small module per concern.</p>
+          </div>
+          <div class="pkg-body">
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">index.html · style.css</span><span class="fpurpose">DOM shell + dashboard styling</span></summary>
+              <div class="file-inner">
+                <p class="file-note">Lays out a 600×600 <code>#map-canvas</code>, <code>#status-panel</code>, <code>#battery-panel</code>, and a <code>#teleop-pad</code> with W/A/S/D buttons; loads the JS as ES modules. CSS gives touch targets ≥44px and disables text-select on the pad.</p>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">teleop_control.js</span><span class="fpurpose">keyboard/button teleop → drive frames</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">_computeDriveFrame(keys)</div><div class="fn-doc">Maps W/S → ±linear (0.4), A/D → ±angular (1.0); returns <code>{type:"drive", linear, angular}</code>.</div></div>
+                  <div class="fn"><div class="fn-sig">_sendFrame(sock, keys)</div><div class="fn-doc">If the socket is open, <code>JSON.stringify</code> and send the drive frame.</div></div>
+                  <div class="fn"><div class="fn-sig">initTeleop(sock)</div><div class="fn-doc">Tracks held W/A/S/D keys and streams a drive frame every 100&nbsp;ms (10&nbsp;Hz).</div></div>
+                  <div class="fn"><div class="fn-sig">initTeleopButtons(pad)</div><div class="fn-doc">Binds the on-screen buttons (mouse + touch) to the same held-key set.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">ws_client.js · status_panel.js</span><span class="fpurpose">connection + inbound telemetry router</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">connect(onMessage)</div><div class="fn-doc">Opens <code>ws://localhost:8765</code>, wires <code>onmessage</code> → <code>onMessage(JSON.parse(...))</code>, returns the socket.</div></div>
+                  <div class="fn"><div class="fn-sig">renderStatus(frame)</div><div class="fn-doc">Renders lift + active-fault/signal state from a <code>status</code> frame.</div></div>
+                  <div class="fn"><div class="fn-sig">dispatch by frame.type</div><div class="fn-doc">The real inbound router — routes <code>map</code>→renderMap, <code>battery</code>→renderBattery, <code>status</code>→renderStatus.</div></div>
+                </div>
+              </div>
+            </details>
+            <details class="file">
+              <summary><svg class="chev" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="fname">map_renderer.js · battery_panel.js</span><span class="fpurpose">canvas map + battery readout</span></summary>
+              <div class="file-inner">
+                <div class="fnlist">
+                  <div class="fn"><div class="fn-sig">renderMap(frame)</div><div class="fn-doc">Draws the SLAM occupancy grid (<code>frame.image</code>) and overlays the robot pose marker (<code>frame.pose</code>).</div></div>
+                  <div class="fn"><div class="fn-sig">renderBattery(frame)</div><div class="fn-doc">Renders battery percentage from <code>frame.percentage</code>.</div></div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ 06 INTERACTION ============ -->
+    <section id="interact">
+      <div class="sec-head"><span class="snum">06</span><h2>How it all interacts</h2></div>
+      <p class="sec-intro">The completed system is one closed loop: <span class="thinks">commands flow down</span> from the operator to the motors, and <span class="reacts">sensing flows up</span> from the encoders back to the operator. Nodes never call each other directly — they only agree on a topic name and a message type. Here's the whole loop.</p>
+
+      <div class="loopwrap">
+        <div class="loop-legend">
+          <span><span class="swatch" style="background:var(--compute)"></span> Command path (down)</span>
+          <span><span class="swatch" style="background:var(--realtime)"></span> Sensing / telemetry (up)</span>
+        </div>
+        <svg class="loop" viewBox="0 0 620 760" role="img" aria-label="Command-down, telemetry-up data loop through the AMR stack">
+          <defs>
+            <marker id="ah-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--compute)"/></marker>
+            <marker id="ah-t" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--realtime)"/></marker>
+          </defs>
+          <!-- nodes -->
+          <g>
+            <rect class="node web" x="200" y="16" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="42" text-anchor="middle">Operator Console</text>
+            <text class="nsub" x="310" y="60" text-anchor="middle">browser · WASD teleop</text>
+
+            <rect class="node rpi" x="200" y="140" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="166" text-anchor="middle">amr_command</text>
+            <text class="nsub" x="310" y="184" text-anchor="middle">gateway · arbiter</text>
+
+            <rect class="node rpi" x="200" y="264" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="290" text-anchor="middle">amr_navigation_move</text>
+            <text class="nsub" x="310" y="308" text-anchor="middle">drive_controller · odometry</text>
+
+            <rect class="node rpi" x="200" y="388" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="414" text-anchor="middle">amr_pico_bridge</text>
+            <text class="nsub" x="310" y="432" text-anchor="middle">ROS2 ⇄ serial</text>
+
+            <rect class="node pico" x="200" y="512" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="538" text-anchor="middle">Pico firmware</text>
+            <text class="nsub" x="310" y="556" text-anchor="middle">core 0 · core 1</text>
+
+            <rect class="node hw" x="200" y="636" width="220" height="60" rx="10"/>
+            <text class="ntitle" x="310" y="662" text-anchor="middle">Hardware</text>
+            <text class="nsub" x="310" y="680" text-anchor="middle">motors · AS5600 encoders</text>
+          </g>
+          <!-- command path (left, down) -->
+          <g>
+            <line class="cmd" x1="150" y1="86" x2="150" y2="130" marker-end="url(#ah-c)"/>
+            <text class="elabel-c" x="142" y="112" text-anchor="end">WS drive</text>
+            <line class="cmd" x1="150" y1="210" x2="150" y2="254" marker-end="url(#ah-c)"/>
+            <text class="elabel-c" x="142" y="236" text-anchor="end">/cmd_vel</text>
+            <line class="cmd" x1="150" y1="334" x2="150" y2="378" marker-end="url(#ah-c)"/>
+            <text class="elabel-c" x="142" y="360" text-anchor="end">/wheel_setpoints</text>
+            <line class="cmd" x1="150" y1="458" x2="150" y2="502" marker-end="url(#ah-c)"/>
+            <text class="elabel-c" x="142" y="480" text-anchor="end">drive_cmd</text>
+            <line class="cmd" x1="150" y1="582" x2="150" y2="626" marker-end="url(#ah-c)"/>
+            <text class="elabel-c" x="142" y="604" text-anchor="end">PWM</text>
+            <!-- connectors from node left edge to the command rail -->
+            <path class="cmd" d="M200 46 H150 V86" opacity=".5"/>
+            <path class="cmd" d="M150 130 V170 H200" opacity=".5"/>
+            <path class="cmd" d="M200 294 H150 V334" opacity=".5"/>
+            <path class="cmd" d="M150 378 V418 H200" opacity=".5"/>
+            <path class="cmd" d="M200 542 H150 V582" opacity=".5"/>
+            <path class="cmd" d="M150 626 V666 H200" opacity=".5"/>
+          </g>
+          <!-- telemetry path (right, up) -->
+          <g>
+            <line class="tel" x1="470" y1="630" x2="470" y2="586" marker-end="url(#ah-t)"/>
+            <text class="elabel-t" x="478" y="612" text-anchor="start">ticks</text>
+            <line class="tel" x1="470" y1="506" x2="470" y2="462" marker-end="url(#ah-t)"/>
+            <text class="elabel-t" x="478" y="488" text-anchor="start">encoder_ticks</text>
+            <line class="tel" x1="470" y1="382" x2="470" y2="338" marker-end="url(#ah-t)"/>
+            <text class="elabel-t" x="478" y="364" text-anchor="start">/encoder_ticks</text>
+            <line class="tel" x1="470" y1="258" x2="470" y2="214" marker-end="url(#ah-t)"/>
+            <text class="elabel-t" x="478" y="240" text-anchor="start">/odom → Nav2</text>
+            <line class="tel" x1="470" y1="134" x2="470" y2="90" marker-end="url(#ah-t)"/>
+            <text class="elabel-t" x="478" y="116" text-anchor="start">WS map/battery/status</text>
+            <path class="tel" d="M420 666 H470 V630" opacity=".5"/>
+            <path class="tel" d="M470 586 V546 H420" opacity=".5"/>
+            <path class="tel" d="M420 418 H470 V382" opacity=".5"/>
+            <path class="tel" d="M470 338 V298 H420" opacity=".5"/>
+            <path class="tel" d="M420 170 H470 V134" opacity=".5"/>
+            <path class="tel" d="M470 90 V54 H420" opacity=".5"/>
+          </g>
+        </svg>
+        <p style="text-align:center;font-size:.8rem;color:var(--ink-faint);margin:8px 0 0;">Lift, battery and fault subsystems (<code class="mono">amr_lift</code>, <code class="mono">amr_charging</code>, <code class="mono">amr_error</code>) attach into this loop at <code class="mono">amr_pico_bridge</code> and <code class="mono">amr_command</code>.</p>
+      </div>
+
+      <h3 style="font-size:1.05rem;margin:8px 0 12px;">Complete topic map (pub/sub)</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Topic</th><th>Type</th><th>Published by</th><th>Subscribed by</th></tr></thead>
+          <tbody>
+            <tr><td><span class="mono t-topic">/cmd_vel</span></td><td class="mono">geometry_msgs/Twist</td><td><span class="mono">amr_command</span>, Nav2</td><td><span class="mono">drive_controller</span></td></tr>
+            <tr><td><span class="mono t-topic">/wheel_setpoints</span></td><td class="mono">amr_msgs/WheelSetpoints</td><td><span class="mono">drive_controller</span></td><td><span class="mono">amr_pico_bridge</span></td></tr>
+            <tr><td><span class="mono t-topic">/encoder_ticks</span></td><td class="mono">amr_msgs/EncoderTicks</td><td><span class="mono">amr_pico_bridge</span></td><td><span class="mono">odometry</span></td></tr>
+            <tr><td><span class="mono t-topic">/odom</span></td><td class="mono">nav_msgs/Odometry</td><td><span class="mono">odometry</span></td><td>Nav2</td></tr>
+            <tr><td><span class="mono t-topic">odom→base_link</span></td><td class="mono">tf2 transform</td><td><span class="mono">odometry</span></td><td>Nav2, SLAM</td></tr>
+            <tr><td><span class="mono t-topic">/scan</span></td><td class="mono">sensor_msgs/LaserScan</td><td>LiDAR driver</td><td>SLAM Toolbox</td></tr>
+            <tr><td><span class="mono t-topic">/map</span></td><td class="mono">nav_msgs/OccupancyGrid</td><td>SLAM Toolbox</td><td>Nav2, <span class="mono">amr_command</span></td></tr>
+            <tr><td><span class="mono t-topic">/pico_status</span></td><td class="mono">amr_msgs/PicoStatus</td><td><span class="mono">amr_pico_bridge</span></td><td><span class="mono">amr_engine</span></td></tr>
+            <tr><td><span class="mono t-topic">LiftCommand / LiftState</span></td><td class="mono">amr_msgs/Lift*</td><td><span class="mono">amr_lift</span> / bridge</td><td>bridge / <span class="mono">amr_lift</span></td></tr>
+            <tr><td><span class="mono t-topic">SignalCommand</span></td><td class="mono">amr_msgs/SignalCommand</td><td><span class="mono">amr_error</span></td><td><span class="mono">amr_pico_bridge</span></td></tr>
+            <tr><td><span class="mono t-topic">battery</span></td><td class="mono">sensor_msgs/BatteryState</td><td><span class="mono">amr_charging</span></td><td><span class="mono">amr_command</span></td></tr>
+            <tr><td><span class="mono t-topic">diagnostics</span></td><td class="mono">diagnostic_msgs/DiagnosticArray</td><td>every subsystem</td><td><span class="mono">amr_engine</span>, <span class="mono">amr_error</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="twocol" style="margin-top:24px;">
+        <div class="infocard">
+          <h4>Services &amp; actions</h4>
+          <p><b>Services</b> (request → one response) handle one-shot commands: <code>TriggerEstop</code>, <code>GetRobotState</code>, <code>GetPicoStatus</code>, <code>SetLiftTarget</code>, <code>SetDriveLimits</code>, <code>ResetOdometry</code>, <code>AcknowledgeFault</code>.</p>
+          <p><b>Actions</b> (goal + feedback + result) handle long-running jobs: <code>NavigateToGoal</code> (drive to a pose, streaming distance-remaining) and <code>MoveLift</code> (reach a height, streaming position). Both are owned by <code>amr_engine</code> as the supervisor.</p>
+        </div>
+        <div class="infocard">
+          <h4>Where JSON, where typed messages</h4>
+          <p>JSON is used <b>only at the two edges</b> — where ROS2 can't reach: the browser (<code>ws://…:8765</code>) and the OS-less Pico (USB-serial). Everything <em>inside</em> the ROS2 graph is strongly-typed <code>amr_msgs</code>, checked at build time.</p>
+          <p><code>amr_command</code> bridges the browser JSON edge; <code>amr_pico_bridge</code> bridges the Pico JSON edge. Between them, no dicts — only compiled message classes.</p>
+        </div>
+      </div>
+
+      <h3 style="font-size:1.05rem;margin:26px 0 12px;">End-to-end traces</h3>
+
+      <div class="trace">
+        <h4><span class="dot" style="background:var(--compute)"></span>Drive a wheel (command, top → bottom)</h4>
+        <div class="flow">
+          <span class="step">Browser<em>WASD held</em></span><span class="sep">→</span>
+          <span class="step">WS <code>drive</code><em>JSON :8765</em></span><span class="sep">→</span>
+          <span class="step">amr_command<em>Twist</em></span><span class="sep">→</span>
+          <span class="step">/cmd_vel</span><span class="sep">→</span>
+          <span class="step">drive_controller<em>kinematics</em></span><span class="sep">→</span>
+          <span class="step">/wheel_setpoints</span><span class="sep">→</span>
+          <span class="step">amr_pico_bridge<em>drive_cmd JSON</em></span><span class="sep">→</span>
+          <span class="step">Pico<em>PWM</em></span><span class="sep">→</span>
+          <span class="step">motors</span>
+        </div>
+      </div>
+      <div class="trace">
+        <h4><span class="dot" style="background:var(--realtime)"></span>Odometry (sensing, bottom → top)</h4>
+        <div class="flow">
+          <span class="step">AS5600 encoders</span><span class="sep">→</span>
+          <span class="step">Pico<em>read_ticks</em></span><span class="sep">→</span>
+          <span class="step">encoder_ticks JSON<em>serial</em></span><span class="sep">→</span>
+          <span class="step">amr_pico_bridge</span><span class="sep">→</span>
+          <span class="step">/encoder_ticks</span><span class="sep">→</span>
+          <span class="step">odometry<em>pose integrate</em></span><span class="sep">→</span>
+          <span class="step">/odom + TF</span><span class="sep">→</span>
+          <span class="step">Nav2 / SLAM</span>
+        </div>
+      </div>
+      <div class="trace">
+        <h4><span class="dot" style="background:var(--console)"></span>Battery to the dashboard (telemetry relay)</h4>
+        <div class="flow">
+          <span class="step">BMS<em>own UART/I2C</em></span><span class="sep">→</span>
+          <span class="step">amr_charging<em>parse_frame</em></span><span class="sep">→</span>
+          <span class="step">BatteryState</span><span class="sep">→</span>
+          <span class="step">amr_command</span><span class="sep">→</span>
+          <span class="step">WS <code>battery</code> JSON</span><span class="sep">→</span>
+          <span class="step">browser<em>renderBattery</em></span>
+        </div>
+      </div>
+
+      <div class="takeaway">
+        <div class="tk-key">Takeaway</div>
+        <p><b>JSON at the edges, typed messages in the core.</b> The browser and the Pico each speak JSON because neither lives in ROS2 — but the moment data crosses into the graph it becomes a compiled <span class="amber">amr_msgs</span> type, so a wrong field is a build error, not a 3 a.m. silent-failure.</p>
+      </div>
+    </section>
+
+    <!-- ============ 07 WIRE PROTOCOL ============ -->
+    <section id="wire">
+      <div class="sec-head"><span class="snum">07</span><h2>Wire protocol — RPi ⇄ Pico</h2></div>
+      <p class="sec-intro">One shared USB-serial port, newline-delimited JSON, UTF-8, 115200 baud. One JSON object per line. Every frame carries <code>type</code> + <code>seq</code>; telemetry frames add <code>ts</code> (the Pico's <code>ticks_ms()</code>). The contract lives in two mirrored files: <code>protocol_codec.py</code> (Pi) and <code>comms_protocol.py</code> (Pico).</p>
+
+      <div class="twocol">
+        <div class="infocard j-fw">
+          <h4>RPi → Pico</h4>
+          <div class="j-sub">commands · downstream</div>
+          <div class="tablewrap" style="margin-top:12px;box-shadow:none;">
+            <table style="min-width:0;">
+              <thead><tr><th>type</th><th>payload</th></tr></thead>
+              <tbody>
+                <tr><td><span class="mono" style="color:var(--realtime)">heartbeat</span></td><td>keep-alive; resets the Pico watchdog</td></tr>
+                <tr><td><span class="mono" style="color:var(--realtime)">drive_cmd</span></td><td><code>left</code>, <code>right</code> — per-wheel speed ≈[-1,1]</td></tr>
+                <tr><td><span class="mono" style="color:var(--realtime)">lift_cmd</span></td><td>target lift height</td></tr>
+                <tr><td><span class="mono" style="color:var(--realtime)">signal_cmd</span></td><td>siren / light / pattern</td></tr>
+                <tr><td><span class="mono" style="color:var(--realtime)">estop_cmd</span></td><td>emergency stop</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="infocard j-fw">
+          <h4>Pico → RPi</h4>
+          <div class="j-sub">telemetry &amp; events · upstream</div>
+          <div class="tablewrap" style="margin-top:12px;box-shadow:none;">
+            <table style="min-width:0;">
+              <thead><tr><th>type</th><th>payload</th></tr></thead>
+              <tbody>
+                <tr><td><span class="mono" style="color:var(--compute)">encoder_ticks</span></td><td><code>left</code>, <code>right</code> tick deltas (50&nbsp;ms)</td></tr>
+                <tr><td><span class="mono" style="color:var(--compute)">lift_state</span></td><td>position + limit switches</td></tr>
+                <tr><td><span class="mono" style="color:var(--compute)">signal_state</span></td><td>siren / light state</td></tr>
+                <tr><td><span class="mono" style="color:var(--compute)">pico_status</span></td><td>uptime · msg-age · WDT resets · free mem</td></tr>
+                <tr><td><span class="mono" style="color:var(--compute)">fault_event</span></td><td>fault raised on the Pico</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <pre class="code"><span class="c"># on the wire (one JSON object per line, \n-terminated)</span>
+<span class="dir">RPi → Pico</span>  {"type":"drive_cmd","seq":41,"left":0.4,"right":0.4}
+<span class="dir">RPi → Pico</span>  {"type":"heartbeat","seq":42}
+<span class="dir up">Pico → RPi</span>  {"type":"encoder_ticks","seq":88,"ts":190413,"left":12,"right":-3}</pre>
+    </section>
+
+    <!-- ============ 08 APPENDIX ============ -->
+    <section id="appendix">
+      <div class="sec-head"><span class="snum">08</span><h2>Appendix</h2></div>
+
+      <h3 style="font-size:1.05rem;margin:4px 0 12px;">Bringup order</h3>
+      <p class="sec-intro" style="margin-bottom:14px;"><code>amr_engine.launch.py</code> is the one command that starts the robot — it launches 8 nodes. SLAM/Nav2 launch separately, swapped between mapping and localization modes.</p>
+      <div class="bringup">
+        <div class="bstep"><span class="bn">1</span><span class="bd"><b>amr_pico_bridge</b> — opens the serial port first; nothing moves without it.</span></div>
+        <div class="bstep"><span class="bn">2</span><span class="bd"><b>drive_controller</b> + <b>odometry</b> — the motion core (cmd_vel ↔ wheels ↔ odom).</span></div>
+        <div class="bstep"><span class="bn">3</span><span class="bd"><b>amr_lift</b> · <b>amr_error</b> · <b>amr_charging</b> — the subsystem nodes.</span></div>
+        <div class="bstep"><span class="bn">4</span><span class="bd"><b>amr_command</b> — opens the WebSocket so the console can connect.</span></div>
+        <div class="bstep"><span class="bn">5</span><span class="bd"><b>amr_engine</b> — the supervisor state machine, aggregating everyone's diagnostics.</span></div>
+        <div class="bstep"><span class="bn">+</span><span class="bd"><b>slam.launch.py / nav2.launch.py</b> — SLAM Toolbox &amp; Nav2, launched on their own.</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <span class="mono">Capco-AMR</span> · code overview · packages → files → functions → interactions. Status badges reflect build progress against the target architecture described here.
+</footer>
+
+<script>
+  (function () {
+    // ---- expand / collapse all, per group ----
+    document.querySelectorAll('[data-expand]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var g = document.querySelector('[data-group="' + btn.getAttribute('data-expand') + '"]');
+        if (g) g.querySelectorAll('details.file').forEach(function (d) { d.open = true; });
+      });
+    });
+    document.querySelectorAll('[data-collapse]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var g = document.querySelector('[data-group="' + btn.getAttribute('data-collapse') + '"]');
+        if (g) g.querySelectorAll('details.file').forEach(function (d) { d.open = false; });
+      });
+    });
+
+    // ---- scroll-spy TOC ----
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[data-sec]'));
+    var byId = {};
+    links.forEach(function (a) { byId[a.getAttribute('data-sec')] = a; });
+    var sections = links.map(function (a) { return document.getElementById(a.getAttribute('data-sec')); }).filter(Boolean);
+
+    function setActive(id) {
+      links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('data-sec') === id); });
+    }
+    if ('IntersectionObserver' in window) {
+      var visible = {};
+      var obs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting ? e.intersectionRatio : 0; });
+        var best = null, bestR = 0;
+        Object.keys(visible).forEach(function (id) { if (visible[id] > bestR) { bestR = visible[id]; best = id; } });
+        if (best) setActive(best);
+      }, { rootMargin: '-15% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] });
+      sections.forEach(function (s) { obs.observe(s); });
+    }
+    // keep the active link in view within the sticky rail
+    links.forEach(function (a) {
+      a.addEventListener('click', function () { setActive(a.getAttribute('data-sec')); });
+    });
+  })();
+</script>
+
+</body>
+</html>
