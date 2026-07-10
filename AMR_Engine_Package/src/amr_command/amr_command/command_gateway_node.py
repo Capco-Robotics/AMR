@@ -97,6 +97,9 @@ class CommandGatewayNode(Node):
 
     def _odom_callback(self, msg):
         pose = msg.pose.pose
+        self.get_logger().info(
+            f"Received odom: x={pose.position.x:.2f}, y={pose.position.y:.2f}"
+        )
 
         q = pose.orientation
 
