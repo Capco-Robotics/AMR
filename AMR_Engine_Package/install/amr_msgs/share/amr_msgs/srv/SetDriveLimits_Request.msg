@@ -1,2 +1,0 @@
-float32 max_linear_mps
-float32 max_angular_rps
