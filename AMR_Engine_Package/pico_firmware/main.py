@@ -69,9 +69,10 @@ def main():
 
                 # Dispatch structural message targets
                 if msg_type == "drive_cmd":
-                    left_spd = float(msg.get("left", 0.0))
-                    right_spd = float(msg.get("right", 0.0))
-                    motor_driver.set_speeds(left_spd, right_spd)
+                  if not watchdog.is_tripped():
+                   left_spd = float(msg.get("left", 0.0))
+                   right_spd = float(msg.get("right", 0.0))
+                   motor_driver.set_speeds(left_spd, right_spd)
                     
                 elif msg_type == "heartbeat":
                     # Handled implicitly above by watchdog.on_rpi_message()
@@ -88,25 +89,24 @@ def main():
         current_time = time.ticks_ms()
         if time.ticks_diff(current_time, last_telemetry_ms) >= config.TELEMETRY_INTERVAL_MS:
             # Gather fresh metrics from hardware
-            left_delta, right_delta = encoder_reader.read_ticks()
-            
-            # Formulate outbound JSON schema
-            telemetry_payload = {
-                "type": "encoder_ticks",
-                "left": left_delta,
-                "right": right_delta
-            }
+         left_ticks, right_ticks = encoder_reader.read_ticks()
+
+         telemetry_payload = {
+          "type": "encoder_ticks",
+          "left_ticks": left_ticks,
+          "right_ticks": right_ticks,
+          "dt_ms": config.TELEMETRY_INTERVAL_MS,
+}
             
             # Send serialized frame over UART pipeline followed by a trailing newline
-            telemetry_str = json.dumps(telemetry_payload) + "\n"
-            uart.write(telemetry_str.encode('utf-8'))
+         telemetry_str = json.dumps(telemetry_payload) + "\n"
+         uart.write(telemetry_str.encode('utf-8'))
             
             # Reset timer mark
-            last_telemetry_ms = current_time
+         last_telemetry_ms = current_time
 
         # Yield execution minimally to keep processing light and clear
         time.sleep_ms(1)
-
-
+        
 if __name__ == '__main__':
     main()

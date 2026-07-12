@@ -10,4 +10,6 @@ class SignalIO:
         pass
 
     def set(self, siren_on: bool, light_on: bool):
-        raise NotImplementedError
+    # TODO: Implement siren/light GPIO control.
+    # For now, do nothing instead of crashing.
+      return

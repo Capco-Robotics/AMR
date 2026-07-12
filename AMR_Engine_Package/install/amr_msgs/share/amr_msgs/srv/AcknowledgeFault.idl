@@ -1,0 +1,15 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from amr_msgs/srv/AcknowledgeFault.srv
+// generated code does not contain a copyright notice
+
+
+module amr_msgs {
+  module srv {
+    struct AcknowledgeFault_Request {
+      string fault_id;
+    };
+    struct AcknowledgeFault_Response {
+      boolean success;
+    };
+  };
+};

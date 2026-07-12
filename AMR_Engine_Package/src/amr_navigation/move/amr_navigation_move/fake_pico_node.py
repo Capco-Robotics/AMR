@@ -5,6 +5,7 @@ from amr_msgs.msg import WheelSetpoints, EncoderTicks
 
 WHEEL_RADIUS_M = 0.127
 TICKS_PER_REV = 4096
+MAX_WHEEL_SPEED_MPS = 1.0
 
 
 class FakePicoNode(Node):
@@ -49,9 +50,13 @@ class FakePicoNode(Node):
         dt = 0.05
 
         # Distance travelled by each wheel
-        left_distance = self.left_speed * dt
-        right_distance = self.right_speed * dt
+        # Convert normalized command back to wheel speed (m/s)
+        left_speed_mps = self.left_speed * MAX_WHEEL_SPEED_MPS
+        right_speed_mps = self.right_speed * MAX_WHEEL_SPEED_MPS
 
+        # Distance travelled by each wheel
+        left_distance = left_speed_mps * dt
+        right_distance = right_speed_mps * dt 
         wheel_circumference = 2 * math.pi * WHEEL_RADIUS_M
 
         # Convert distance to encoder tick increments

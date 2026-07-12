@@ -11,6 +11,7 @@ WHEEL_RADIUS_M = 0.127      # 10 inch diameter wheel -> radius = 5 inch = 0.127 
 TRACK_WIDTH_M = 0.800       # Distance between left & right wheel centers (meters)
 TICKS_PER_REV = 4096        # AS5600 12-bit absolute encoder
 
+MAX_WHEEL_SPEED_MPS = 1.0
 def twist_to_wheel_speeds(linear: float, angular: float) -> tuple[float, float]:
     """
     Convert robot linear and angular velocity into left and right wheel speeds.

@@ -46,6 +46,18 @@ class Watchdog:
         return False
 
     def _trip(self):
-        self.motor_driver.stop()
-        # lift intentionally not moved -- hold position
+    # Always stop motors first
+     try:
+         self.motor_driver.stop()
+     except Exception:
+        pass
+
+    # Lift intentionally not moved -- hold position
+
+     try:
         self.signal_io.set(siren_on=True, light_on=True)
+     except Exception:
+        pass
+     
+    def is_tripped(self):
+     return self._tripped

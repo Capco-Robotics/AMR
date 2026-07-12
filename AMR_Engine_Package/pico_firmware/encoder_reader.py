@@ -42,6 +42,8 @@ class EncoderReader:
         # Establish the baseline angles for the first read_ticks() calculation
         self._prev_left = _read_angle(self._i2c_left)
         self._prev_right = _read_angle(self._i2c_right)
+        self._left_ticks = 0
+        self._right_ticks = 0
 
     def read_ticks(self) -> tuple[int, int]:
         """Returns (left_ticks, right_ticks) accumulated since the last call.
@@ -66,7 +68,12 @@ class EncoderReader:
             delta_right += 4096
 
         # Store the current baseline for next calculation
+        
+        # Store the current baseline for next calculation
         self._prev_left = cur_left
         self._prev_right = cur_right
 
-        return (delta_left, delta_right)
+        self._left_ticks += delta_left
+        self._right_ticks += delta_right
+
+        return (self._left_ticks, self._right_ticks)

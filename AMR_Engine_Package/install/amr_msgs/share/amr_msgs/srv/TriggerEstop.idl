@@ -1,0 +1,15 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from amr_msgs/srv/TriggerEstop.srv
+// generated code does not contain a copyright notice
+
+
+module amr_msgs {
+  module srv {
+    struct TriggerEstop_Request {
+      boolean release;
+    };
+    struct TriggerEstop_Response {
+      boolean success;
+    };
+  };
+};

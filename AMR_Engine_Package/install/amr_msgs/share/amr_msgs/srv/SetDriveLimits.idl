@@ -1,0 +1,17 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from amr_msgs/srv/SetDriveLimits.srv
+// generated code does not contain a copyright notice
+
+
+module amr_msgs {
+  module srv {
+    struct SetDriveLimits_Request {
+      float max_linear_mps;
+
+      float max_angular_rps;
+    };
+    struct SetDriveLimits_Response {
+      boolean accepted;
+    };
+  };
+};
