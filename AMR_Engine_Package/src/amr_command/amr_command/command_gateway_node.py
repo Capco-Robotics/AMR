@@ -14,6 +14,10 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import OccupancyGrid, Odometry
 
+from sensor_msgs.msg import BatteryState
+
+from amr_msgs.msg import LiftState, SignalCommand
+
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
 
@@ -35,6 +39,31 @@ class OperatorInputArbiter:
             return self._linear, self._angular
 
 
+# WebSocket frame schema
+#
+# Map:
+# {
+#     "type": "map",
+#     "image": "<base64 PNG>",
+#     "pose": { "x": ..., "y": ..., "yaw": ... }
+# }
+#
+# Battery:
+# {
+#     "type": "battery",
+#     "percentage": <float>
+# }
+#
+# Status:
+# {
+#     "type": "status",
+#     "lift_position": <float>,
+#     "siren_on": <bool>,
+#     "light_on": <bool>,
+#     "pattern_id": <int>
+# }
+
+
 class CommandGatewayNode(Node):
 
     def __init__(self):
@@ -48,6 +77,10 @@ class CommandGatewayNode(Node):
         self.arbiter = OperatorInputArbiter()
 
         self._latest_pose = None
+        self._latest_lift_position = 0.0
+        self._latest_siren = False
+        self._latest_light = False
+        self._latest_pattern = 0
 
         threading.Thread(
             target=self._run_ws,
@@ -67,10 +100,31 @@ class CommandGatewayNode(Node):
             10,
         )
 
+        self.battery_sub = self.create_subscription(
+            BatteryState,
+            "/battery",
+            self._battery_callback,
+            10,
+        )
+
         self.odom_sub = self.create_subscription(
             Odometry,
             "/odom",
             self._odom_callback,
+            10,
+        )
+
+        self.lift_sub = self.create_subscription(
+            LiftState,
+            "/lift_state",
+            self._lift_callback,
+            10,
+        )
+
+        self.signal_sub = self.create_subscription(
+            SignalCommand,
+            "/signal_command",
+            self._signal_callback,
             10,
         )
 
@@ -114,6 +168,55 @@ class CommandGatewayNode(Node):
             "y": pose.position.y,
             "yaw": yaw,
         }
+
+
+    def _battery_callback(self, msg):
+        frame = {
+            "type": "battery",
+            "percentage": msg.percentage,
+        }
+
+        if self.websocket_server.loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast(frame),
+                self.websocket_server.loop,
+            )
+
+    def _lift_callback(self, msg):
+        self._latest_lift_position = msg.position
+
+        frame = {
+            "type": "status",
+            "lift_position": msg.position,
+            "siren_on": self._latest_siren,
+            "light_on": self._latest_light,
+            "pattern_id": self._latest_pattern,
+        }
+
+        if self.websocket_server.loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast(frame),
+                self.websocket_server.loop,
+            )
+            
+    def _signal_callback(self, msg):
+        self._latest_siren = msg.siren_on
+        self._latest_light = msg.light_on
+        self._latest_pattern = msg.pattern_id
+
+        frame = {
+            "type": "status",
+            "lift_position": self._latest_lift_position,
+            "siren_on": msg.siren_on,
+            "light_on": msg.light_on,
+            "pattern_id": msg.pattern_id,
+        }
+
+        if self.websocket_server.loop is not None:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast(frame),
+                self.websocket_server.loop,
+            )
 
     def _map_callback(self, msg):
         self.get_logger().info("===== MAP CALLBACK HIT =====")
