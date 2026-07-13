@@ -28,7 +28,20 @@ def generate_launch_description():
         ),
 
         # TODO:
-        # Replace this placeholder with ydlidar_ros_driver node
-        # after the driver package is added to the workspace.
+        # Confirm executable and parameter names after vendoring
+        # ydlidar_ros_driver into the workspace.
+        Node(
+            package="ydlidar_ros_driver",
+            executable="ydlidar_ros_driver_node",
+            name="ydlidar_ros_driver",
+            output="screen",
+            parameters=[
+                {
+                    "serial_port": serial_port,
+                    "baudrate": baudrate,
+                    "frame_id": frame_id,
+                }
+            ],
+        ),
 
     ])

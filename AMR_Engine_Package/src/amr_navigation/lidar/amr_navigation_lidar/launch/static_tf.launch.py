@@ -9,8 +9,13 @@ def generate_launch_description():
             executable='static_transform_publisher',
             name='laser_static_tf',
             arguments=[
-                '0', '0', '0.15',     # x y z
-                '0', '0', '0',        # roll pitch yaw
+                # TODO:
+                # Measure the actual LiDAR mounting position after hardware installation.
+                '0', '0', '0.0',      # x y z
+
+                # yaw pitch roll
+                '0', '0', '0',
+
                 'base_link',
                 'laser'
             ],

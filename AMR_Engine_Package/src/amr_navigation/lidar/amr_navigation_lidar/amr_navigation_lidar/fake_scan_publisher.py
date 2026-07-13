@@ -1,4 +1,5 @@
 import math
+import random
 
 import rclpy
 from rclpy.node import Node
@@ -43,7 +44,42 @@ class FakeScanPublisher(Node):
             (scan.angle_max - scan.angle_min) / scan.angle_increment
         ) + 1
 
-        scan.ranges = [2.0] * num_readings
+        ranges = []
+
+        for i in range(num_readings):
+
+            angle = scan.angle_min + i * scan.angle_increment
+
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+
+            distances = []
+
+            if cos_a > 0:
+                distances.append(2.0 / cos_a)
+            elif cos_a < 0:
+                distances.append(-2.0 / cos_a)
+
+            if sin_a > 0:
+                distances.append(2.0 / sin_a)
+            elif sin_a < 0:
+                distances.append(-2.0 / sin_a)
+
+            distance = min(distances)
+
+            distance += random.gauss(0.0, 0.02)
+            distance = max(scan.range_min, min(distance, scan.range_max))
+
+            r = random.random()
+
+            if r < 0.01:
+                distance = float("nan")
+            elif r < 0.03:
+                distance = scan.range_max
+
+            ranges.append(distance)
+
+        scan.ranges = ranges
         scan.intensities = [100.0] * num_readings
 
         self.publisher.publish(scan)
