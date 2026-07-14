@@ -89,11 +89,9 @@ export function renderMap(mapFrame) {
 
 
         const robotY =
-            canvas.height -
             (
-                (mapFrame.pose.y - origin.y)
-                / resolution
-            );
+                mapFrame.pose.y - origin.y
+            ) / resolution;
 
 
         console.log(
