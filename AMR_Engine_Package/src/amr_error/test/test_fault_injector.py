@@ -1,50 +1,124 @@
-from amr_error.fault_pattern_table import (
-    FAULT_PATTERN_TABLE,
-    NO_FAULT_PATTERN,
-    FAIL_SAFE_PATTERN,
-    PATTERN_NONE,
-    PATTERN_RED_FLASH,
-    PATTERN_YELLOW_FLASH,
-    PATTERN_EMERGENCY,
-)
+import rclpy
+
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+
+from amr_error.signal_system_node import SignalSystemNode
+
+
+class FakePublisher:
+    def __init__(self):
+        self.last_msg = None
+
+    def publish(self, msg):
+        self.last_msg = msg
+
+
+def create_status(name, level):
+    status = DiagnosticStatus()
+    status.name = name
+    status.level = level
+    return status
+
+
+def setup_node():
+    rclpy.init()
+
+    node = SignalSystemNode()
+
+    fake_pub = FakePublisher()
+    node.publisher = fake_pub
+
+    return node, fake_pub
+
+
+def teardown_node(node):
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 def test_no_fault():
-    assert NO_FAULT_PATTERN["siren_on"] is False
-    assert NO_FAULT_PATTERN["light_on"] is False
-    assert NO_FAULT_PATTERN["pattern_id"] == PATTERN_NONE
 
+    node, pub = setup_node()
 
-def test_battery_low():
-    pattern = FAULT_PATTERN_TABLE["BATTERY_LOW"]
+    msg = DiagnosticArray()
+    msg.status = []
 
-    assert pattern["siren_on"] is False
-    assert pattern["light_on"] is True
-    assert pattern["pattern_id"] == PATTERN_YELLOW_FLASH
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is False
+    assert pub.last_msg.light_on is False
+    assert pub.last_msg.pattern_id == 0
+
+    teardown_node(node)
 
 
 def test_motor_fault():
-    pattern = FAULT_PATTERN_TABLE["MOTOR_FAULT"]
 
-    assert pattern["siren_on"] is True
-    assert pattern["light_on"] is True
-    assert pattern["pattern_id"] == PATTERN_RED_FLASH
+    node, pub = setup_node()
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("MOTOR_FAULT", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 1
+
+    teardown_node(node)
+
+
+def test_battery_low():
+
+    node, pub = setup_node()
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("BATTERY_LOW", DiagnosticStatus.WARN)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is False
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 2
+
+    teardown_node(node)
 
 
 def test_emergency_stop():
-    pattern = FAULT_PATTERN_TABLE["EMERGENCY_STOP"]
 
-    assert pattern["siren_on"] is True
-    assert pattern["light_on"] is True
-    assert pattern["pattern_id"] == PATTERN_EMERGENCY
+    node, pub = setup_node()
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("EMERGENCY_STOP", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 3
+
+    teardown_node(node)
 
 
 def test_unknown_fault():
-    pattern = FAULT_PATTERN_TABLE.get(
-        "UNKNOWN_FAULT",
-        FAIL_SAFE_PATTERN,
-    )
 
-    assert pattern["siren_on"] is True
-    assert pattern["light_on"] is True
-    assert pattern["pattern_id"] == PATTERN_EMERGENCY
+    node, pub = setup_node()
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("SOME_NEW_FAULT", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 3
+
+    teardown_node(node)

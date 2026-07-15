@@ -17,8 +17,8 @@ light using the emergency pattern.
 
 import rclpy
 from rclpy.node import Node
-
 from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticStatus
 from amr_msgs.msg import SignalCommand
 
 from .fault_pattern_table import (
@@ -72,7 +72,7 @@ class SignalSystemNode(Node):
         # Find first active fault
         for status in msg.status:
 
-            if status.level > 0:
+            if status.level != DiagnosticStatus.OK:
                 active_fault = status.name
                 break
 
