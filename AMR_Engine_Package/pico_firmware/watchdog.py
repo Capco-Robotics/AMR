@@ -32,6 +32,14 @@ class Watchdog:
     def on_rpi_message(self):
         self._last_rpi_msg_ms = time.ticks_ms()
 
+    # Clear watchdog once heartbeats resume
+        if self._tripped:
+         self._tripped = False
+
+         try:
+             self.signal_io.set(siren_on=False, light_on=False)
+         except Exception:
+            pass
     def feed_hardware_wdt(self):
         if self._hw_wdt is not None:
             self._hw_wdt.feed()
