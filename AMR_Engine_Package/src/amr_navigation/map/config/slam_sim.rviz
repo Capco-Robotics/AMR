@@ -15,6 +15,18 @@ Visualization Manager:
       Name: TF
       Enabled: true
 
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Topic:
+        Value: /robot_description
+
+    - Class: rviz_default_plugins/Pose
+      Name: Initial Pose
+      Enabled: true
+      Topic:
+        Value: /initialpose
+
     - Class: rviz_default_plugins/Map
       Name: Map
       Enabled: true
