@@ -118,8 +118,7 @@ class CommandGatewayNode(Node):
         self.get_logger().info("MAP RECEIVED")
         
         try:
-          frame = encode_occupancy_grid(msg)
-
+            frame = encode_occupancy_grid(msg)
             frame["type"] = "map"
             frame["pose"] = self._latest_pose
 
