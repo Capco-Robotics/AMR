@@ -9,6 +9,10 @@ import time
 import rclpy
 from rclpy.action import ActionServer
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+
+from rclpy.executors import MultiThreadedExecutor
+
 
 from amr_msgs.action import MoveLift
 from amr_msgs.msg import LiftCommand, LiftState
@@ -19,6 +23,9 @@ class LiftControlNode(Node):
 
     def __init__(self):
         super().__init__("amr_lift")
+
+        self.callback_group = ReentrantCallbackGroup()
+        self.MAX_POSITION = 1.0
 
         # Current lift state
         self.current_position = 0.0
@@ -38,6 +45,7 @@ class LiftControlNode(Node):
             "lift_state",
             self._lift_state_callback,
             10,
+            callback_group=self.callback_group,
         )
 
         # Service
@@ -45,6 +53,7 @@ class LiftControlNode(Node):
             SetLiftTarget,
             "set_lift_target",
             self._handle_set_lift_target,
+            callback_group=self.callback_group,
         )
 
         # Action Server
@@ -53,6 +62,7 @@ class LiftControlNode(Node):
             MoveLift,
             "move_lift",
             self._execute_move_lift,
+            callback_group=self.callback_group,
         )
 
         self.get_logger().info("Lift Control Node Started")
@@ -78,6 +88,7 @@ class LiftControlNode(Node):
     def _execute_move_lift(self, goal_handle):
 
         target = goal_handle.request.target_position
+        target = max(0.0, min(target, self.MAX_POSITION))
         self.get_logger().info(
             f"Execute callback started. Target={target:.2f}"
         )
@@ -93,7 +104,16 @@ class LiftControlNode(Node):
         feedback = MoveLift.Feedback()
 
         while abs(self.current_position - target) > 0.01:
-            
+
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+
+                return result
+
             self.get_logger().info(
                 f"Current Position={self.current_position:.2f}, Target={target:.2f}"
             )
@@ -104,7 +124,7 @@ class LiftControlNode(Node):
 
             goal_handle.publish_feedback(feedback)
 
-            time.sleep(0.1)
+            rclpy.spin_once(self, timeout_sec=0.1)
 
         goal_handle.succeed()
 
@@ -120,14 +140,14 @@ def main(args=None):
 
     node = LiftControlNode()
 
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
-
-
-if __name__ == "__main__":
-    main()
