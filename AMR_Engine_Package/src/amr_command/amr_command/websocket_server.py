@@ -12,6 +12,7 @@ class WebsocketServer:
         self.port = port
         self.connections = set()
         self._on_message_cb = None
+        self.loop = None
 
     async def _handle_client(self, websocket):
         try:
@@ -27,6 +28,8 @@ class WebsocketServer:
             self.connections.remove(websocket)
 
     async def start(self):
+        self.loop = asyncio.get_running_loop()
+        
         async with websockets.serve(
             self._handle_client,
             self.host,
