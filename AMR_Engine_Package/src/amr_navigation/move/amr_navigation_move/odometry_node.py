@@ -27,11 +27,12 @@ class OdometryNode(Node):
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
-        self.last_left_ticks = None
-        self.last_right_ticks = None
 
         # Store previous callback time
         self.last_time = self.get_clock().now()
+        # Store previous encoder ticks
+        self.last_left_ticks = None
+        self.last_right_ticks = None
 
         # Publisher: /odom
         self.odom_pub = self.create_publisher(
@@ -68,18 +69,20 @@ class OdometryNode(Node):
         dt = (current_time - self.last_time).nanoseconds / 1e9
         self.last_time = current_time
 
-        # Convert encoder ticks into local robot motion
+        # Skip first encoder message (initialize tick reference)
         if self.last_left_ticks is None:
             self.last_left_ticks = msg.left_ticks
             self.last_right_ticks = msg.right_ticks
             return
 
+        # Calculate encoder tick deltas
         left_delta = msg.left_ticks - self.last_left_ticks
         right_delta = msg.right_ticks - self.last_right_ticks
 
         self.last_left_ticks = msg.left_ticks
         self.last_right_ticks = msg.right_ticks
 
+        # Convert delta ticks into local robot motion
         dx, dy, dtheta = ticks_to_pose_delta(
             left_delta,
             right_delta,
