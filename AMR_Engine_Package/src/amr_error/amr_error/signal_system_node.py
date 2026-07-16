@@ -1,20 +1,3 @@
-"""
-Signal System Node
-
-This node listens for diagnostic messages and converts active faults into
-SignalCommand messages.
-
-Fault Clear Policy:
--------------------
-The signal is cleared immediately once there are no active faults.
-No manual acknowledge is required.
-
-Fail-safe Behaviour:
---------------------
-If an unknown/unmapped fault is received, the node enables both siren and
-light using the emergency pattern.
-"""
-
 import rclpy
 from rclpy.node import Node
 from diagnostic_msgs.msg import DiagnosticArray
@@ -26,7 +9,6 @@ from .fault_pattern_table import (
     NO_FAULT_PATTERN,
     FAIL_SAFE_PATTERN,
 )
-
 
 
 class SignalSystemNode(Node):
@@ -53,30 +35,27 @@ class SignalSystemNode(Node):
 
     def diagnostic_callback(self, msg):
 
-        # Default: no fault
+        # Default pattern
         pattern = NO_FAULT_PATTERN
-        # Empty diagnostics
-        if len(msg.status) == 0:
-           command = SignalCommand()
-
-           command.header.stamp = self.get_clock().now().to_msg()
-           command.siren_on = NO_FAULT_PATTERN["siren_on"]
-           command.light_on = NO_FAULT_PATTERN["light_on"]
-           command.pattern_id = NO_FAULT_PATTERN["pattern_id"]
-
-           self.publisher.publish(command)
-           return
-
         active_fault = None
 
-        # Find first active fault
+        # Emergency Stop always has highest priority
         for status in msg.status:
-
-            if status.level != DiagnosticStatus.OK:
+            if (
+                status.level != DiagnosticStatus.OK
+                and status.name == "EMERGENCY_STOP"
+            ):
                 active_fault = status.name
                 break
 
-        # No active fault
+        # Otherwise choose the first active fault
+        if active_fault is None:
+            for status in msg.status:
+                if status.level != DiagnosticStatus.OK:
+                    active_fault = status.name
+                    break
+
+        # Select signal pattern
         if active_fault is None:
             pattern = NO_FAULT_PATTERN
 
@@ -86,7 +65,7 @@ class SignalSystemNode(Node):
         else:
             pattern = FAIL_SAFE_PATTERN
 
-
+        # Publish signal command
         command = SignalCommand()
         command.header.stamp = self.get_clock().now().to_msg()
         command.siren_on = pattern["siren_on"]
@@ -95,15 +74,14 @@ class SignalSystemNode(Node):
 
         self.publisher.publish(command)
 
-def main(args=None):
 
+def main(args=None):
     rclpy.init(args=args)
 
     node = SignalSystemNode()
 
     try:
         rclpy.spin(node)
-
     finally:
         node.destroy_node()
         rclpy.shutdown()

@@ -46,10 +46,10 @@ class EncoderReader:
         self._right_ticks = 0
 
     def read_ticks(self) -> tuple[int, int]:
-        """Returns (left_ticks, right_ticks) accumulated since the last call.
+        """Returns cumulative encoder tick totals.
 
-        One tick == 1/4096 of a full revolution. Sign reflects direction.
-        """
+        One tick == 1/4096 of a full revolution.
+        """ 
         cur_left = _read_angle(self._i2c_left)
         cur_right = _read_angle(self._i2c_right)
 
@@ -67,7 +67,6 @@ class EncoderReader:
         elif delta_right < -_HALF_RANGE:
             delta_right += 4096
 
-        # Store the current baseline for next calculation
         
         # Store the current baseline for next calculation
         self._prev_left = cur_left

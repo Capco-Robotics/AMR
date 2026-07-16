@@ -64,22 +64,19 @@ def main():
                 msg = json.loads(line)
                 msg_type = msg.get("type")
                 
-                # Signal the watchdog that the Raspberry Pi is successfully alive
-                watchdog.on_rpi_message()
+                
 
                 # Dispatch structural message targets
                 if msg_type == "drive_cmd":
-                  if not watchdog.is_tripped():
-                   left_spd = float(msg.get("left", 0.0))
-                   right_spd = float(msg.get("right", 0.0))
-                   motor_driver.set_speeds(left_spd, right_spd)
+                   if not watchdog.is_tripped():
+                      left_spd = float(msg.get("left", 0.0))
+                      right_spd = float(msg.get("right", 0.0))
+                      motor_driver.set_speeds(left_spd, right_spd)
                     
-                elif msg_type == "heartbeat":
-                    # Handled implicitly above by watchdog.on_rpi_message()
-                    pass
-                    
-                elif msg_type == "estop_cmd":
-                    motor_driver.stop()
+                   elif msg_type == "heartbeat":
+                    watchdog.on_rpi_message()
+                   elif msg_type == "estop_cmd":
+                     motor_driver.stop()
                     
             except (ValueError, KeyError, TypeError):
                 # Safely catch JSON formatting corruptions or missing keys without crashing firmware

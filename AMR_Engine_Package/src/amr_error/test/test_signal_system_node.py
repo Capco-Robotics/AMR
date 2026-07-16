@@ -1,3 +1,4 @@
+import pytest
 import rclpy
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
@@ -20,7 +21,8 @@ def create_status(name, level):
     return status
 
 
-def setup_node():
+@pytest.fixture
+def node_and_pub():
     rclpy.init()
 
     node = SignalSystemNode()
@@ -28,17 +30,14 @@ def setup_node():
     fake_pub = FakePublisher()
     node.publisher = fake_pub
 
-    return node, fake_pub
+    yield node, fake_pub
 
-
-def teardown_node(node):
     node.destroy_node()
     rclpy.shutdown()
 
 
-def test_no_fault():
-
-    node, pub = setup_node()
+def test_no_fault(node_and_pub):
+    node, pub = node_and_pub
 
     msg = DiagnosticArray()
     msg.status = []
@@ -49,12 +48,9 @@ def test_no_fault():
     assert pub.last_msg.light_on is False
     assert pub.last_msg.pattern_id == 0
 
-    teardown_node(node)
 
-
-def test_motor_fault():
-
-    node, pub = setup_node()
+def test_motor_fault(node_and_pub):
+    node, pub = node_and_pub
 
     msg = DiagnosticArray()
     msg.status = [
@@ -67,12 +63,9 @@ def test_motor_fault():
     assert pub.last_msg.light_on is True
     assert pub.last_msg.pattern_id == 1
 
-    teardown_node(node)
 
-
-def test_battery_low():
-
-    node, pub = setup_node()
+def test_battery_low(node_and_pub):
+    node, pub = node_and_pub
 
     msg = DiagnosticArray()
     msg.status = [
@@ -85,12 +78,9 @@ def test_battery_low():
     assert pub.last_msg.light_on is True
     assert pub.last_msg.pattern_id == 2
 
-    teardown_node(node)
 
-
-def test_emergency_stop():
-
-    node, pub = setup_node()
+def test_emergency_stop(node_and_pub):
+    node, pub = node_and_pub
 
     msg = DiagnosticArray()
     msg.status = [
@@ -103,12 +93,9 @@ def test_emergency_stop():
     assert pub.last_msg.light_on is True
     assert pub.last_msg.pattern_id == 3
 
-    teardown_node(node)
 
-
-def test_unknown_fault():
-
-    node, pub = setup_node()
+def test_unknown_fault(node_and_pub):
+    node, pub = node_and_pub
 
     msg = DiagnosticArray()
     msg.status = [
@@ -120,5 +107,3 @@ def test_unknown_fault():
     assert pub.last_msg.siren_on is True
     assert pub.last_msg.light_on is True
     assert pub.last_msg.pattern_id == 3
-
-    teardown_node(node)
