@@ -103,6 +103,7 @@ class LiftControlNode(Node):
 
         feedback = MoveLift.Feedback()
 
+        rate = self.create_rate(10)
         while abs(self.current_position - target) > 0.01:
 
             if goal_handle.is_cancel_requested:
@@ -124,7 +125,7 @@ class LiftControlNode(Node):
 
             goal_handle.publish_feedback(feedback)
 
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rate.sleep()
 
         goal_handle.succeed()
 
