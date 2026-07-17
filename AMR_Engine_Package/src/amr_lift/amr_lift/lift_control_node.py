@@ -7,7 +7,7 @@ amr_msgs/LiftState for the Pico's closed-loop position/limit-switch feedback.
 import time
 
 import rclpy
-from rclpy.action import ActionServer
+from rclpy.action import ActionServer, CancelResponse
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 
@@ -63,6 +63,7 @@ class LiftControlNode(Node):
             "move_lift",
             self._execute_move_lift,
             callback_group=self.callback_group,
+            cancel_callback=self._cancel_callback,
         )
 
         self.get_logger().info("Lift Control Node Started")
@@ -73,6 +74,15 @@ class LiftControlNode(Node):
         self.limit_lower = msg.limit_lower
 
     def _handle_set_lift_target(self, request, response):
+
+        if request.target_position < 0.0 or request.target_position > self.MAX_POSITION:
+            self.get_logger().warn(
+                f"Invalid target: {request.target_position:.2f}"
+            )
+
+            response.accepted = False
+            return response
+
         command = LiftCommand()
         command.target_position = request.target_position
 
@@ -83,12 +93,26 @@ class LiftControlNode(Node):
         )
 
         response.accepted = True
+
         return response
 
     def _execute_move_lift(self, goal_handle):
 
         target = goal_handle.request.target_position
-        target = max(0.0, min(target, self.MAX_POSITION))
+
+        if target < 0.0 or target > self.MAX_POSITION:
+            self.get_logger().error(
+                f"Invalid target position: {target:.2f}"
+            )
+
+            goal_handle.abort()
+
+            result = MoveLift.Result()
+            result.success = False
+            result.final_position = self.current_position
+
+            return result
+
         self.get_logger().info(
             f"Execute callback started. Target={target:.2f}"
         )
@@ -102,9 +126,38 @@ class LiftControlNode(Node):
         )
 
         feedback = MoveLift.Feedback()
+        start_time = time.time()
+        TIMEOUT = 10.0
 
         rate = self.create_rate(10)
         while abs(self.current_position - target) > 0.01:
+
+            if time.time() - start_time > TIMEOUT:
+                self.get_logger().error("Lift movement timed out")
+                goal_handle.abort()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+                return result
+            
+            if self.limit_upper and target >= self.MAX_POSITION:
+                self.get_logger().warn("Upper limit reached")
+                goal_handle.abort()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+                return result
+
+            if self.limit_lower and target <= 0.0:
+                self.get_logger().warn("Lower limit reached")
+                goal_handle.abort()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+                return result
 
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
@@ -115,7 +168,7 @@ class LiftControlNode(Node):
 
                 return result
 
-            self.get_logger().info(
+            self.get_logger().debug(
                 f"Current Position={self.current_position:.2f}, Target={target:.2f}"
             )
 
@@ -134,7 +187,10 @@ class LiftControlNode(Node):
         result.final_position = self.current_position
 
         return result
-
+    
+    def _cancel_callback(self, cancel_request):
+        self.get_logger().info("Cancel request received")
+        return CancelResponse.ACCEPT
 
 def main(args=None):
     rclpy.init(args=args)
