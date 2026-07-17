@@ -9,6 +9,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', ['launch/lift_sim.launch.py'],),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'lift_control_node = amr_lift.lift_control_node:main',
+            'fake_lift_pico_node = amr_lift.fake_lift_pico_node:main',
         ],
     },
 )
