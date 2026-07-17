@@ -90,7 +90,7 @@ class OdometryNode(Node):
         )
 
         # Update robot heading
-        self.theta += dtheta
+        
 
         # Convert local robot motion to global frame
         global_dx = (
@@ -102,13 +102,15 @@ class OdometryNode(Node):
             dx * math.sin(self.theta)
             + dy * math.cos(self.theta)
         )
+        self.theta += dtheta
+    
 
         # Update global pose
         self.x += global_dx
         self.y += global_dy
 
 
-        # Convert heading to quaternion
+        # Convert heading to quateion
         qx, qy, qz, qw = quaternion_from_euler(
             0.0,
             0.0,

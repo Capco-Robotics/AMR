@@ -6,18 +6,18 @@ import config
 class MotorDriver:
     def __init__(self):
         # 1. Initialize Left Motor Pins
-        left_pwm_pin = machine.Pin(config.LEFT_MOTOR_PWM)
+        left_pwm_pin = machine.Pin(config.MOTOR_LEFT_PWM_PIN)
         self.left_pwm = machine.PWM(left_pwm_pin)
         self.left_pwm.freq(20000)  # Set frequency to 20 kHz
         
-        self.left_dir = machine.Pin(config.LEFT_MOTOR_DIR, machine.Pin.OUT)
+        self.left_dir = machine.Pin(config.MOTOR_LEFT_DIR_PIN, machine.Pin.OUT)
         
         # 2. Initialize Right Motor Pins
-        right_pwm_pin = machine.Pin(config.RIGHT_MOTOR_PWM)
+        right_pwm_pin = machine.Pin(config.MOTOR_RIGHT_PWM_PIN)
         self.right_pwm = machine.PWM(right_pwm_pin)
         self.right_pwm.freq(20000)  # Set frequency to 20 kHz
         
-        self.right_dir = machine.Pin(config.RIGHT_MOTOR_DIR, machine.Pin.OUT)
+        self.right_dir = machine.Pin(config.MOTOR_RIGHT_DIR_PIN, machine.Pin.OUT)
         
         # Ensure motors start completely stopped
         self.stop()

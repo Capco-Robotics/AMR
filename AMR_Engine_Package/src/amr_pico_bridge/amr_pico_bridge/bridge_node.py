@@ -5,6 +5,7 @@ amr_error, forwards them to the Pico as protocol_codec messages, and
 republishes Pico telemetry (encoder_ticks, lift_state, signal_state,
 pico_status, fault_event) as amr_msgs topics.
 """
+
 import time
 
 import rclpy
@@ -21,13 +22,17 @@ from amr_pico_bridge.serial_transport import SerialTransport
 class PicoBridgeNode(Node):
     def __init__(self):
         super().__init__('amr_pico_bridge')
+
         self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('baudrate', 115200)
+
         self.transport = SerialTransport(
             self.get_parameter('serial_port').value,
             self.get_parameter('baudrate').value,
         )
+
         self.transport.open()
+
         self._seq = 0
         self._rx_seq = None
         self._link_connected = True
@@ -83,6 +88,8 @@ class PicoBridgeNode(Node):
                 self._link_connected = False
             return
 
+        self._link_connected = True
+
         self._seq += 1
 
         message = {
@@ -92,7 +99,8 @@ class PicoBridgeNode(Node):
         }
 
         self.transport.write(protocol_codec.encode(message))
-        # TODO: implement callbacks and uncomment
+
+        # TODO:
         # self.create_service(GetPicoStatus, 'get_pico_status', self._handle_get_pico_status)
         # self.create_service(TriggerEstop, 'trigger_estop', self._handle_trigger_estop)
 
@@ -104,7 +112,9 @@ class PicoBridgeNode(Node):
         try:
             message = protocol_codec.decode(line)
         except Exception:
-            self.get_logger().warning(f"Failed to decode serial line: {line!r}")
+            self.get_logger().warning(
+                f"Failed to decode serial line: {line!r}"
+            )
             return
 
         seq = message.get("seq")
@@ -120,25 +130,55 @@ class PicoBridgeNode(Node):
         msg_type = message.get("type")
 
         if msg_type == protocol_codec.TEL_ENCODER_TICKS:
+
+            required_fields = (
+                "left_ticks",
+                "right_ticks",
+                "dt_ms",
+            )
+
+            missing = [
+                field for field in required_fields
+                if field not in message
+            ]
+
+            if missing:
+                self.get_logger().warning(
+                    f"Encoder telemetry missing fields: {missing}. "
+                    f"Message: {message}"
+                )
+                return
+
             msg = EncoderTicks()
-            msg.left_ticks = message.get("left_ticks", 0)
-            msg.right_ticks = message.get("right_ticks", 0)
-            msg.dt_ms = message.get("dt_ms", 0)
+            msg.left_ticks = message["left_ticks"]
+            msg.right_ticks = message["right_ticks"]
+            msg.dt_ms = message["dt_ms"]
 
             self.encoder_pub.publish(msg)
+
         elif msg_type == protocol_codec.TEL_PICO_STATUS:
+
             msg = PicoStatus()
+
             msg.uptime_ms = message.get("uptime_ms", 0)
-            msg.last_rpi_msg_age_ms = message.get("last_rpi_msg_age_ms", 0)
-            msg.watchdog_resets = message.get("watchdog_resets", 0)
-            msg.free_mem_bytes = message.get("free_mem_bytes", 0)
+            msg.last_rpi_msg_age_ms = message.get(
+                "last_rpi_msg_age_ms", 0
+            )
+            msg.watchdog_resets = message.get(
+                "watchdog_resets", 0
+            )
+            msg.free_mem_bytes = message.get(
+                "free_mem_bytes", 0
+            )
 
             self.status_pub.publish(msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
+
     node = PicoBridgeNode()
+
     try:
         rclpy.spin(node)
     finally:

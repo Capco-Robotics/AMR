@@ -25,7 +25,7 @@ class WebsocketServer:
                     self._on_message_cb(frame)
 
         finally:
-            self.connections.remove(websocket)
+            self.connections.discard(websocket)
 
     async def start(self):
         self.loop = asyncio.get_running_loop()
@@ -43,7 +43,7 @@ class WebsocketServer:
             try:
                 await websocket.send(json_message)
             except Exception:
-                self.connections.remove(websocket)
+                self.connections.discard(websocket)
        
 if __name__ == "__main__":
     asyncio.run(WebsocketServer().start())

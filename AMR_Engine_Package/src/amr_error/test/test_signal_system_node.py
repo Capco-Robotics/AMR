@@ -1,0 +1,109 @@
+import pytest
+import rclpy
+
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+
+from amr_error.signal_system_node import SignalSystemNode
+
+
+class FakePublisher:
+    def __init__(self):
+        self.last_msg = None
+
+    def publish(self, msg):
+        self.last_msg = msg
+
+
+def create_status(name, level):
+    status = DiagnosticStatus()
+    status.name = name
+    status.level = level
+    return status
+
+
+@pytest.fixture
+def node_and_pub():
+    rclpy.init()
+
+    node = SignalSystemNode()
+
+    fake_pub = FakePublisher()
+    node.publisher = fake_pub
+
+    yield node, fake_pub
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+def test_no_fault(node_and_pub):
+    node, pub = node_and_pub
+
+    msg = DiagnosticArray()
+    msg.status = []
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is False
+    assert pub.last_msg.light_on is False
+    assert pub.last_msg.pattern_id == 0
+
+
+def test_motor_fault(node_and_pub):
+    node, pub = node_and_pub
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("MOTOR_FAULT", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 1
+
+
+def test_battery_low(node_and_pub):
+    node, pub = node_and_pub
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("BATTERY_LOW", DiagnosticStatus.WARN)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is False
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 2
+
+
+def test_emergency_stop(node_and_pub):
+    node, pub = node_and_pub
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("EMERGENCY_STOP", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 3
+
+
+def test_unknown_fault(node_and_pub):
+    node, pub = node_and_pub
+
+    msg = DiagnosticArray()
+    msg.status = [
+        create_status("SOME_NEW_FAULT", DiagnosticStatus.ERROR)
+    ]
+
+    node.diagnostic_callback(msg)
+
+    assert pub.last_msg.siren_on is True
+    assert pub.last_msg.light_on is True
+    assert pub.last_msg.pattern_id == 3

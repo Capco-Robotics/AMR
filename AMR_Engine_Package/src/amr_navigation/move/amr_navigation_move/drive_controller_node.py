@@ -8,8 +8,8 @@ from amr_msgs.msg import WheelSetpoints
 
 from amr_navigation_move.diff_drive_kinematics import (
     twist_to_wheel_speeds,
+    MAX_WHEEL_SPEED_MPS,
 )
-
 # TODO: from amr_msgs.srv import SetDriveLimits
 
 
@@ -48,7 +48,8 @@ class DriveControllerNode(Node):
             linear,
             angular,
         )
-
+        left_speed = max(-1.0, min(1.0, left_speed / MAX_WHEEL_SPEED_MPS))
+        right_speed = max(-1.0, min(1.0, right_speed / MAX_WHEEL_SPEED_MPS))
         wheel_msg = WheelSetpoints()
 
         wheel_msg.header.stamp = self.get_clock().now().to_msg()
