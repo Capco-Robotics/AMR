@@ -1,0 +1,87 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="amr">
+
+  <!-- TODO: confirm against real chassis once known -->
+  <xacro:property name="chassis_x" value="0.8"/>
+  <xacro:property name="chassis_y" value="0.8"/>
+  <xacro:property name="chassis_z" value="0.2"/>
+
+  <!-- TODO: confirm against real chassis once known -->
+  <xacro:property name="laser_front_left_x" value="0.4"/>
+  <xacro:property name="laser_front_left_y" value="0.4"/>
+  <xacro:property name="laser_front_left_z" value="0.15"/>
+  <xacro:property name="laser_front_left_yaw" value="0.0"/>
+
+  <!-- TODO: confirm against real chassis once known -->
+  <xacro:property name="laser_rear_right_x" value="-0.4"/>
+  <xacro:property name="laser_rear_right_y" value="-0.4"/>
+  <xacro:property name="laser_rear_right_z" value="0.15"/>
+  <xacro:property name="laser_rear_right_yaw" value="3.14159"/>
+
+  <link name="base_link">
+
+    <visual>
+      <origin xyz="0 0 ${chassis_z/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_x} ${chassis_y} ${chassis_z}"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.6 0.6 0.6 1.0"/>
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 ${chassis_z/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_x} ${chassis_y} ${chassis_z}"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <origin xyz="0 0 ${chassis_z/2}" rpy="0 0 0"/>
+      <mass value="20.0"/>
+      <inertia
+        ixx="1.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="1.0"
+        iyz="0.0"
+        izz="1.0"/>
+    </inertial>
+
+  </link>
+
+  <link name="laser_front_left">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="laser_front_left_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_front_left"/>
+    <origin
+      xyz="${laser_front_left_x} ${laser_front_left_y} ${laser_front_left_z}"
+      rpy="0 0 ${laser_front_left_yaw}"/>
+  </joint>
+
+  <link name="laser_rear_right">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="laser_rear_right_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_rear_right"/>
+    <origin
+      xyz="${laser_rear_right_x} ${laser_rear_right_y} ${laser_rear_right_z}"
+      rpy="0 0 ${laser_rear_right_yaw}"/>
+  </joint>
+
+</robot>
