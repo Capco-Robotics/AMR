@@ -11,6 +11,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EncoderTicks.msg"
   "msg/WheelSetpoints.msg"
   "msg/LiftCommand.msg"
+  "msg/FaultCodes.msg"
   "msg/LiftState.msg"
   "msg/SignalCommand.msg"
   "msg/PicoStatus.msg"
