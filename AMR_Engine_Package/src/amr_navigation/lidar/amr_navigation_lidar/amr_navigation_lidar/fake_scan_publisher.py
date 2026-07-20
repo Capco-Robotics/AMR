@@ -28,7 +28,7 @@ class FakeScanPublisher(Node):
         now = self.get_clock().now().to_msg()
 
         scan.header.stamp = now
-        scan.header.frame_id = "laser"
+        scan.header.frame_id = "laser_front_left"
 
         scan.angle_min = -math.pi
         scan.angle_max = math.pi
