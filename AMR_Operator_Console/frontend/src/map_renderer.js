@@ -1,10 +1,24 @@
 // Renders the SLAM occupancy grid (sent by amr_command's map_encoder as a
 // PNG/compact image) plus a robot-pose marker, onto the <canvas> 2D context.
-
+import { websocket } from "./ws_client.js";
 const canvas = document.getElementById("map-canvas");
 const ctx = canvas.getContext("2d");
 
 let mapImage = null;
+
+let latestMapFrame = null;
+
+let goalMode = false;
+
+let goalMarker = null;
+
+export function setGoalMode(enabled) {
+
+    goalMode = enabled;
+
+    canvas.style.cursor =
+        enabled ? "crosshair" : "default";
+}
 
 export function renderMap(mapFrame) {
 
@@ -12,6 +26,7 @@ export function renderMap(mapFrame) {
     if (!mapFrame || !mapFrame.image) {
         return;
     }
+    latestMapFrame = mapFrame;
 
     // Task 6: Resize canvas only when map size changes
     if (
@@ -70,8 +85,75 @@ export function renderMap(mapFrame) {
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
         ctx.stroke();
+
+        if (goalMarker) {
+
+            ctx.beginPath();
+
+            ctx.arc(
+                goalMarker.x,
+                goalMarker.y,
+                6,
+                0,
+                Math.PI * 2
+            );
+
+            ctx.fillStyle = "lime";
+
+            ctx.fill();
+
+        }
     };
+    
 
     mapImage.src =
         `data:image/png;base64,${mapFrame.image}`;
 }
+
+canvas.addEventListener("click", (event) => {
+
+    if (!goalMode || !latestMapFrame) {
+        return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const pixelX =
+        (event.clientX - rect.left) * scaleX;
+
+    const pixelY =
+        (event.clientY - rect.top) * scaleY;
+
+    const worldX =
+        latestMapFrame.origin.x +
+        pixelX * latestMapFrame.resolution;
+
+    const worldY =
+        latestMapFrame.origin.y +
+        (canvas.height - pixelY) *
+        latestMapFrame.resolution;
+
+    goalMarker = {
+        x: pixelX,
+        y: pixelY,
+    };
+
+    if (websocket) {
+
+        websocket.send(
+            JSON.stringify({
+                type: "nav_goal",
+                x: worldX,
+                y: worldY,
+                theta: 0.0,
+            })
+        );
+
+    }
+
+    renderMap(latestMapFrame);
+
+});

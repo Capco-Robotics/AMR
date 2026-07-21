@@ -2,10 +2,7 @@
 // incoming telemetry frames to whichever panel/renderer cares about them.
 import { initTeleop } from "./teleop_control.js";
 import { initTeleopButtons } from "./teleop_control.js";
-import {
-    renderMap,
-    setGoalMode,
-} from "./map_renderer.js";
+import { setGoalMode } from "./map_renderer.js";
 
 const WS_URL = 'ws://localhost:8765';
 
@@ -20,13 +17,10 @@ export let websocket = null;
 
 function handleTelemetryFrame(data) {
 
-    if (data.type === "map") {
-        renderMap(data);
-    }
-
     console.log("Telemetry frame received:", data);
 
 }
+
 websocket = connect(handleTelemetryFrame);
 
 initTeleop(websocket);
