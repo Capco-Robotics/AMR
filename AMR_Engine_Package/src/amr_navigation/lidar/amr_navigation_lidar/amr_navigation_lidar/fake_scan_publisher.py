@@ -12,15 +12,30 @@ class FakeScanPublisher(Node):
     def __init__(self):
         super().__init__("fake_scan_publisher")
 
+        self.declare_parameter("scan_topic", "/scan")
+        self.declare_parameter("frame_id", "laser_front_left")
+        self.declare_parameter("mount_x", 0.0)
+        self.declare_parameter("mount_y", 0.0)
+        self.declare_parameter("mount_yaw", 0.0)
+
+        self.scan_topic = self.get_parameter("scan_topic").value
+        self.frame_id = self.get_parameter("frame_id").value
+        self.mount_x = self.get_parameter("mount_x").value
+        self.mount_y = self.get_parameter("mount_y").value
+        self.mount_yaw = self.get_parameter("mount_yaw").value
+
         self.publisher = self.create_publisher(
             LaserScan,
-            "/scan",
+            self.scan_topic,
             10,
         )
 
         self.timer = self.create_timer(0.1, self.publish_scan)
 
-        self.get_logger().info("Fake Scan Publisher Started")
+        self.get_logger().info(
+            f"Fake Scan Publisher Started (scan_topic={self.scan_topic}, "
+            f"frame_id={self.frame_id}, mount=({self.mount_x}, {self.mount_y}, {self.mount_yaw}))"
+        )
 
     def publish_scan(self):
         scan = LaserScan()
@@ -28,7 +43,7 @@ class FakeScanPublisher(Node):
         now = self.get_clock().now().to_msg()
 
         scan.header.stamp = now
-        scan.header.frame_id = "laser_front_left"
+        scan.header.frame_id = self.frame_id
 
         scan.angle_min = -math.pi
         scan.angle_max = math.pi
@@ -49,21 +64,22 @@ class FakeScanPublisher(Node):
         for i in range(num_readings):
 
             angle = scan.angle_min + i * scan.angle_increment
+            world_angle = angle + self.mount_yaw
 
-            cos_a = math.cos(angle)
-            sin_a = math.sin(angle)
+            cos_a = math.cos(world_angle)
+            sin_a = math.sin(world_angle)
 
             distances = []
 
             if cos_a > 0:
-                distances.append(2.0 / cos_a)
+                distances.append((2.0 - self.mount_x) / cos_a)
             elif cos_a < 0:
-                distances.append(-2.0 / cos_a)
+                distances.append((-2.0 - self.mount_x) / cos_a)
 
             if sin_a > 0:
-                distances.append(2.0 / sin_a)
+                distances.append((2.0 - self.mount_y) / sin_a)
             elif sin_a < 0:
-                distances.append(-2.0 / sin_a)
+                distances.append((-2.0 - self.mount_y) / sin_a)
 
             distance = min(distances)
 

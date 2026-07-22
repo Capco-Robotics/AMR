@@ -7,7 +7,7 @@ slam_toolbox:
     odom_frame: odom
     base_frame: base_link
 
-    scan_topic: /scan
+    scan_topic: /scan_front  # INTERIM: switch back to merged /scan in feature/scan-merger
 
     resolution: 0.05
     max_laser_range: 12.0
