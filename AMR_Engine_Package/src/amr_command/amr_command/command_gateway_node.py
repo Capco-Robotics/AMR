@@ -163,6 +163,7 @@ class CommandGatewayNode(Node):
         }
 
     def _map_callback(self, msg):
+        print("========== MAP CALLBACK HIT ==========")
         self.get_logger().info("MAP RECEIVED")
         
         try:

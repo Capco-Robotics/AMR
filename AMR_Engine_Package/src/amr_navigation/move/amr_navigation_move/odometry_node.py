@@ -8,7 +8,6 @@ from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
-from tf_transformations import quaternion_from_euler
 
 from amr_msgs.msg import EncoderTicks
 
@@ -110,12 +109,11 @@ class OdometryNode(Node):
         self.y += global_dy
 
 
-        # Convert heading to quateion
-        qx, qy, qz, qw = quaternion_from_euler(
-            0.0,
-            0.0,
-            self.theta,
-        )
+        # Convert heading to quaternion
+        qx = 0.0
+        qy = 0.0
+        qz = math.sin(self.theta / 2.0)
+        qw = math.cos(self.theta / 2.0)
 
         # Create odometry message
         odom = Odometry()
