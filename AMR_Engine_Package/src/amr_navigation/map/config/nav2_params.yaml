@@ -41,12 +41,12 @@ controller_server:
 
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.26
+      max_vel_x: 0.30
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      max_vel_theta: 0.80
 
       min_speed_xy: 0.0
-      max_speed_xy: 0.26
+      max_speed_xy: 0.30
       min_speed_theta: 0.0
 
       acc_lim_x: 2.5
@@ -97,7 +97,6 @@ bt_navigator:
     global_frame: map
     robot_base_frame: base_link
     odom_topic: /odom
-
 local_costmap:
   local_costmap:
     ros__parameters:
@@ -109,7 +108,7 @@ local_costmap:
       height: 3
       resolution: 0.05
       # TODO: confirm against real chassis dimensions once known
-      robot_radius: 0.35
+      footprint: "[[0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4]]"
 
       plugins:
         - obstacle_layer
@@ -137,7 +136,7 @@ global_costmap:
       robot_base_frame: base_link
       resolution: 0.05
       # TODO: confirm against real chassis dimensions once known
-      robot_radius: 0.35
+      footprint: "[[0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4]]"
       track_unknown_space: true
 
       plugins:
@@ -147,6 +146,7 @@ global_costmap:
 
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -162,33 +162,49 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.55
 
-recoveries_server:
+velocity_smoother:
   ros__parameters:
     use_sim_time: false
 
-    recovery_plugins:
+    smoothing_frequency: 20.0
+    feedback: "OPEN_LOOP"
+
+    max_velocity:
+      - 0.30
+      - 0.0
+      - 0.80
+
+    min_velocity:
+      - -0.30
+      - 0.0
+      - -0.80
+
+    max_accel:
+      - 2.5
+      - 0.0
+      - 3.2
+
+    max_decel:
+      - -2.5
+      - 0.0
+      - -3.2
+
+    velocity_timeout: 0.5
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+
+    behavior_plugins:
       - spin
       - backup
       - wait
 
     spin:
-      plugin: "nav2_recoveries/Spin"
+      plugin: "nav2_behaviors/Spin"
 
     backup:
-      plugin: "nav2_recoveries/BackUp"
+      plugin: "nav2_behaviors/BackUp"
 
     wait:
-      plugin: "nav2_recoveries/Wait"
-
-lifecycle_manager:
-  ros__parameters:
-    use_sim_time: false
-    autostart: true
-
-    node_names:
-      - planner_server
-      - controller_server
-      - bt_navigator
-      - local_costmap
-      - global_costmap
-      - recoveries_server
+      plugin: "nav2_behaviors/Wait"
