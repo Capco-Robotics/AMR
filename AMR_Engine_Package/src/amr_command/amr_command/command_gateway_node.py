@@ -11,7 +11,7 @@ import math
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 
 from amr_command.map_encoder import encode_occupancy_grid
@@ -59,6 +59,12 @@ class CommandGatewayNode(Node):
             10,
         )
 
+        self.goal_pose_pub = self.create_publisher(
+            PoseStamped,
+            "/goal_pose",
+            10,
+        )
+
         self.map_sub = self.create_subscription(
             OccupancyGrid,
             "/map",
@@ -85,11 +91,53 @@ class CommandGatewayNode(Node):
 
     def _on_ws_frame(self, data):
         try:
-            if data.get("type") == "drive":
+
+            frame_type = data.get("type")
+
+            if frame_type == "drive":
+
                 self.arbiter.submit_command(
                     source="browser",
                     linear=float(data.get("linear", 0.0)),
                     angular=float(data.get("angular", 0.0)),
+                )
+
+            elif frame_type == "nav_goal":
+
+                x = float(data["x"])
+                y = float(data["y"])
+                theta = float(data["theta"])
+
+                if not (
+                    math.isfinite(x)
+                    and math.isfinite(y)
+                    and math.isfinite(theta)
+                ):
+                    self.get_logger().warning(
+                        "Rejected invalid goal"
+                    )
+                    return
+
+                goal = PoseStamped()
+
+                goal.header.stamp = self.get_clock().now().to_msg()
+                goal.header.frame_id = "map"
+
+                goal.pose.position.x = x
+                goal.pose.position.y = y
+                goal.pose.position.z = 0.0
+
+                half_theta = theta / 2.0
+
+                goal.pose.orientation.x = 0.0
+                goal.pose.orientation.y = 0.0
+                goal.pose.orientation.z = math.sin(half_theta)
+                goal.pose.orientation.w = math.cos(half_theta)
+
+                self.goal_pose_pub.publish(goal)
+
+                self.get_logger().info(
+                    f"Goal published ({x:.2f}, {y:.2f})"
                 )
 
         except Exception as e:
