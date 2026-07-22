@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Generated SLAM maps
+AMR_Engine_Package/src/amr_navigation/map/maps/*.posegraph
+AMR_Engine_Package/src/amr_navigation/map/maps/*.data
+AMR_Engine_Package/src/amr_navigation/map/maps/*.pgm
+AMR_Engine_Package/src/amr_navigation/map/maps/*.yaml

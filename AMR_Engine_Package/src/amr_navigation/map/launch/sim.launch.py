@@ -18,15 +18,17 @@ def generate_launch_description():
 
     map_pkg = get_package_share_directory("amr_navigation_map")
     lidar_pkg = get_package_share_directory("amr_navigation_lidar")
+    description_pkg = get_package_share_directory("amr_description")
 
-    urdf_file = os.path.join(
-        map_pkg,
-        "urdf",
-        "amr.urdf",
+    description_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                description_pkg,
+                "launch",
+                "description.launch.py",
+            )
+        )
     )
-
-    with open(urdf_file, "r") as f:
-        robot_description = f.read()
 
     lidar_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -87,18 +89,7 @@ def generate_launch_description():
             default_value="/scan",
         ),
 
-        Node(
-            package="robot_state_publisher",
-            executable="robot_state_publisher",
-            name="robot_state_publisher",
-            output="screen",
-            parameters=[
-                {
-                    "robot_description": robot_description,
-                    "use_sim_time": False,
-                }
-            ],
-        ),
+        description_launch,
 
         Node(
             package="amr_navigation_move",

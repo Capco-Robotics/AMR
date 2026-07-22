@@ -1,7 +1,7 @@
 // Renders lift state and active fault/signal status pushed from
 // amr_lift / amr_error via amr_command.
 
-import { connect } from './ws_client.js';
+import { connect } from "./ws_client.js";
 import { renderMap } from './map_renderer.js';
 import { renderBattery } from './battery_panel.js';
 
@@ -12,15 +12,21 @@ function renderStatus(statusFrame) {
 }
 
 connect((frame) => {
-  switch (frame.type) {
-    case 'map':
-      renderMap(frame);
-      break;
-    case 'battery':
-      renderBattery(frame);
-      break;
-    case 'status':
-      renderStatus(frame);
-      break;
-  }
+
+    switch (frame.type) {
+
+        case "map":
+            renderMap(frame);
+            break;
+
+        case "battery":
+            renderBattery(frame);
+            break;
+
+        case "status":
+            renderStatus(frame);
+            break;
+
+    }
+
 });
