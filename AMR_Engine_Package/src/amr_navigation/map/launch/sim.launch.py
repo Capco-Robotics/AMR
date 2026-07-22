@@ -13,6 +13,8 @@ def generate_launch_description():
 
     noise = LaunchConfiguration("noise")
     rviz = LaunchConfiguration("rviz")
+    nav = LaunchConfiguration("nav")
+    scan_topic = LaunchConfiguration("scan_topic")
 
     map_pkg = get_package_share_directory("amr_navigation_map")
     lidar_pkg = get_package_share_directory("amr_navigation_lidar")
@@ -33,7 +35,10 @@ def generate_launch_description():
                 "launch",
                 "fake_scan.launch.py",
             )
-        )
+        ),
+        launch_arguments={
+            "noise": noise,
+        }.items(),
     )
 
     slam_launch = IncludeLaunchDescription(
@@ -46,6 +51,21 @@ def generate_launch_description():
         )
     )
 
+    nav_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                map_pkg,
+                "launch",
+                "nav2.launch.py",
+            )
+        ),
+        condition=IfCondition(nav),
+        launch_arguments={
+            "use_sim_time": "false",
+            "scan_topic": scan_topic,
+        }.items(),
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             "noise",
@@ -55,6 +75,16 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "rviz",
             default_value="true",
+        ),
+
+        DeclareLaunchArgument(
+            "nav",
+            default_value="false",
+        ),
+
+        DeclareLaunchArgument(
+            "scan_topic",
+            default_value="/scan",
         ),
 
         Node(
@@ -102,6 +132,7 @@ def generate_launch_description():
 
         lidar_launch,
         slam_launch,
+        nav_launch,
 
         Node(
             package="rviz2",

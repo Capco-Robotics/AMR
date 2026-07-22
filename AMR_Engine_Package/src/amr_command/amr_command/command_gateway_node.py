@@ -7,6 +7,7 @@ streams live telemetry (map, battery, lift/fault status) out over a websocket.
 import asyncio
 import threading
 import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -17,22 +18,27 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
 
-
 class OperatorInputArbiter:
 
     def __init__(self):
         self._linear = 0.0
         self._angular = 0.0
+        self._last_command_time = None
         self._lock = threading.Lock()
 
     def submit_command(self, source: str, linear: float, angular: float):
         with self._lock:
             self._linear = linear
             self._angular = angular
+            self._last_command_time = time.monotonic()
 
     def get_active_command(self):
         with self._lock:
-            return self._linear, self._angular
+            return (
+                self._linear,
+                self._angular,
+                self._last_command_time,
+            )
 
 
 class CommandGatewayNode(Node):
@@ -130,16 +136,23 @@ class CommandGatewayNode(Node):
 
         except Exception as e:
             self.get_logger().error(f"Map broadcast failed: {e}")
-  
 
     def _publish_cmd_vel(self):
-        linear, angular = self.arbiter.get_active_command()
+        linear, angular, last_command_time = self.arbiter.get_active_command()
+
+        if (
+            last_command_time is None
+            or (time.monotonic() - last_command_time) > 0.5
+        ):
+            return
 
         msg = Twist()
         msg.linear.x = linear
         msg.angular.z = angular
 
         self.cmd_vel_pub.publish(msg)
+
+
 
 
 def main(args=None):
