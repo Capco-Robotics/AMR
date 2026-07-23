@@ -8,6 +8,9 @@ import asyncio
 import threading
 import math
 import time
+import os
+import re
+
 
 import rclpy
 from rclpy.node import Node
@@ -15,8 +18,15 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 
+from slam_toolbox.srv import ( 
+    SerializePoseGraph, 
+    DeserializePoseGraph
+)
+
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
+
+
 
 class OperatorInputArbiter:
 
@@ -54,6 +64,29 @@ class CommandGatewayNode(Node):
 
         self._latest_pose = None
 
+        self.declare_parameter(
+            "maps_directory",
+            "maps",
+        )
+
+        self.maps_directory = self.get_parameter(
+            "maps_directory"
+        ).value
+
+        self.declare_parameter(
+            "slam_mode",
+            "mapping",
+        )
+
+        self.slam_mode = self.get_parameter(
+            "slam_mode"
+        ).value
+
+        os.makedirs(
+            self.maps_directory,
+            exist_ok=True,
+        )
+
         threading.Thread(
             target=self._run_ws,
             daemon=True,
@@ -69,6 +102,16 @@ class CommandGatewayNode(Node):
             PoseStamped,
             "/goal_pose",
             10,
+        )
+
+        self.serialize_client = self.create_client(
+            SerializePoseGraph,
+            "/slam_toolbox/serialize_map",
+        )
+
+        self.deserialize_client = self.create_client(
+            DeserializePoseGraph,
+            "/slam_toolbox/deserialize_map",
         )
 
         self.map_sub = self.create_subscription(
@@ -96,6 +139,11 @@ class CommandGatewayNode(Node):
             10,
         )
         self.get_logger().info("CommandGatewayNode initialized")
+        self._send_slam_mode()
+        self.create_timer(
+            2.0,
+            self._send_slam_mode,
+        )
    
 
     def plan_callback(self, msg):
@@ -189,6 +237,52 @@ class CommandGatewayNode(Node):
                     f"Goal published ({x:.2f}, {y:.2f})"
                 )
 
+            elif frame_type == "map_save":
+
+                map_name = self._sanitize_map_name(
+                    data.get("name", "")
+                )
+
+                if map_name is None:
+
+                    asyncio.run_coroutine_threadsafe(
+                        self.websocket_server.broadcast({
+                            "type": "map_op_result",
+                            "ok": False,
+                            "error": "Invalid map name",
+                        }),
+                        self.websocket_server.loop,
+                    )
+
+                    return
+
+                self._save_map(map_name)
+
+            elif frame_type == "map_load":
+
+                map_name = self._sanitize_map_name(
+                    data.get("name", "")
+                )
+
+                if map_name is None:
+
+                    asyncio.run_coroutine_threadsafe(
+                        self.websocket_server.broadcast({
+                            "type": "map_op_result",
+                            "ok": False,
+                            "error": "Invalid map name",
+                        }),
+                        self.websocket_server.loop,
+                    )
+
+                    return
+
+                self._load_map(map_name)
+
+            elif frame_type == "map_list":
+
+                self._send_map_list()
+
         except Exception as e:
             self.get_logger().error(str(e))
 
@@ -230,6 +324,223 @@ class CommandGatewayNode(Node):
     
     def _run_ws(self):
         asyncio.run(self.websocket_server.start())
+
+    
+    def _sanitize_map_name(self, name: str):
+
+            if not isinstance(name, str):
+                return None
+
+            if not re.fullmatch(
+                r"[a-zA-Z0-9_-]+",
+                name,
+            ):
+                return None
+
+            return name
+        
+        
+
+    def _save_map(self, map_name):
+
+        if not self.serialize_client.service_is_ready():
+
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast({
+                    "type": "map_op_result",
+                    "ok": False,
+                    "error": "Serialize service unavailable",
+                }),
+                self.websocket_server.loop,
+            )
+
+            return
+
+        request = SerializePoseGraph.Request()
+
+        request.filename = os.path.join(
+            self.maps_directory,
+            map_name,
+        )
+
+        future = self.serialize_client.call_async(request)
+
+        future.add_done_callback(
+            self._save_map_done
+        )
+
+    def _save_map_done(self, future):
+
+        try:
+
+            response = future.result()
+
+            ok = getattr(response, "result", True)
+
+            error = ""
+
+        except Exception as e:
+
+            ok = False
+            error = str(e)
+
+        asyncio.run_coroutine_threadsafe(
+
+            self.websocket_server.broadcast({
+
+                "type": "map_op_result",
+
+                "ok": ok,
+
+                "error": error,
+
+            }),
+
+            self.websocket_server.loop,
+
+        )
+    def _load_map(self, map_name):
+
+        if not self.deserialize_client.service_is_ready():
+
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast({
+                    "type": "map_op_result",
+                    "ok": False,
+                    "error": "Deserialize service unavailable",
+                }),
+                self.websocket_server.loop,
+            )
+
+            return
+
+        map_path = os.path.join(
+            self.maps_directory,
+            map_name,
+        )
+
+        if not os.path.exists(map_path + ".posegraph"):
+
+            asyncio.run_coroutine_threadsafe(
+
+                self.websocket_server.broadcast({
+
+                    "type": "map_op_result",
+
+                    "ok": False,
+
+                    "error": "Map does not exist",
+
+                }),
+
+                self.websocket_server.loop,
+
+            )
+
+            return
+
+        request = DeserializePoseGraph.Request()
+
+        request.filename = os.path.join(
+            self.maps_directory,
+            map_name,
+        )
+
+        future = self.deserialize_client.call_async(request)
+
+        future.add_done_callback(
+            self._load_map_done
+        )
+
+    def _load_map_done(self, future):
+
+        try:
+
+            response = future.result()
+
+            ok = getattr(response, "result", True)
+
+            error = ""
+
+        except Exception as e:
+
+            ok = False
+            error = str(e)
+
+        asyncio.run_coroutine_threadsafe(
+
+            self.websocket_server.broadcast({
+
+                "type": "map_op_result",
+
+                "ok": ok,
+
+                "error": error,
+
+            }),
+
+            self.websocket_server.loop,
+
+        )
+
+    def _send_map_list(self):
+
+        try:
+
+            maps = []
+
+            for filename in os.listdir(self.maps_directory):
+
+                if filename.endswith(".posegraph"):
+
+                    maps.append(
+                        filename[:-10]
+                    )
+
+            maps.sort()
+
+            frame = {
+
+                "type": "map_list",
+
+                "maps": maps,
+
+            }
+
+        except Exception as e:
+
+            frame = {
+
+                "type": "map_op_result",
+
+                "ok": False,
+
+                "error": str(e),
+
+            }
+
+        asyncio.run_coroutine_threadsafe(
+
+            self.websocket_server.broadcast(frame),
+
+            self.websocket_server.loop,
+
+        )
+
+    def _send_slam_mode(self):
+
+        mode = self.slam_mode.capitalize()
+
+        frame = {
+            "type": "slam_mode",
+            "mode": mode,
+        }
+
+        asyncio.run_coroutine_threadsafe(
+            self.websocket_server.broadcast(frame),
+            self.websocket_server.loop,
+        )
+    
 
     def _publish_cmd_vel(self):
         linear, angular, last_command_time = self.arbiter.get_active_command()

@@ -22,10 +22,40 @@
     </div>
 
     <button data-key="s">Backward</button>
+    </div>
+
+  <div id="map-panel">
+
+  <h3>Map Manager</h3>
+
+  <div id="slam-mode">
+    Mode : Unknown
   </div>
+
+  <input
+      id="map-name"
+      type="text"
+      placeholder="Map name"
+  >
+
+  <button id="save-map-btn">
+      Save Map
+  </button>
+
+  <button id="refresh-map-btn">
+      Refresh
+  </button>
+
+  <hr>
+
+  <div id="map-list"></div>
+
+</div>
+
   <script type="module" src="src/ws_client.js"></script>
   <script type="module" src="src/map_renderer.js"></script>
   <script type="module" src="src/status_panel.js"></script>
   <script type="module" src="src/battery_panel.js"></script>
+  <script type="module" src="src/map_panel.js"></script>
 </body>
 </html>
