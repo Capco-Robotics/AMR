@@ -13,7 +13,7 @@ import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import Twist, PoseStamped
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
@@ -89,11 +89,54 @@ class CommandGatewayNode(Node):
             0.1,
             self._publish_cmd_vel,
         )
-
+        self.plan_sub = self.create_subscription(
+            Path,
+            "/plan",
+            self.plan_callback,
+            10,
+        )
         self.get_logger().info("CommandGatewayNode initialized")
+   
 
-    def _run_ws(self):
-        asyncio.run(self.websocket_server.start())
+    def plan_callback(self, msg):
+
+        if len(msg.poses) == 0:
+
+            frame = {
+                "type": "plan",
+                "points": [],
+            }
+
+            asyncio.run_coroutine_threadsafe(
+                self.websocket_server.broadcast(frame),
+                self.websocket_server.loop,
+            )
+
+            return
+
+        points = []
+
+        for pose in msg.poses[::5]:
+
+            points.append([
+                pose.pose.position.x,
+                pose.pose.position.y,
+            ])
+
+        frame = {
+            "type": "plan",
+            "points": points,
+        }
+
+        asyncio.run_coroutine_threadsafe(
+            self.websocket_server.broadcast(frame),
+            self.websocket_server.loop,
+        )
+
+        self.get_logger().info(
+            f"Broadcasted plan with {len(points)} points"
+        )
+
 
     def _on_ws_frame(self, data):
         try:
@@ -184,6 +227,9 @@ class CommandGatewayNode(Node):
 
         except Exception as e:
             self.get_logger().error(f"Map broadcast failed: {e}")
+    
+    def _run_ws(self):
+        asyncio.run(self.websocket_server.start())
 
     def _publish_cmd_vel(self):
         linear, angular, last_command_time = self.arbiter.get_active_command()

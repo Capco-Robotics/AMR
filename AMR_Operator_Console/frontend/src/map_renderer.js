@@ -12,12 +12,33 @@ let goalMode = false;
 
 let goalMarker = null;
 
+let planPoints = [];
+
 export function setGoalMode(enabled) {
 
     goalMode = enabled;
 
     canvas.style.cursor =
         enabled ? "crosshair" : "default";
+}
+
+export function updatePlan(planFrame) {
+
+    planPoints = planFrame.points || [];
+
+    console.log("PLAN FRAME:", planFrame);
+    console.log("PLAN POINTS:", planPoints);
+
+    if (
+        planPoints.length === 0
+    ) {
+        goalMarker = null;
+    }
+
+    if (latestMapFrame) {
+        renderMap(latestMapFrame);
+    }
+
 }
 
 export function renderMap(mapFrame) {
@@ -86,6 +107,64 @@ export function renderMap(mapFrame) {
         ctx.lineWidth = 2;
         ctx.stroke();
 
+        console.log(
+            "Origin:",
+            originX,
+            originY,
+            "Resolution:",
+            resolution
+        );
+
+        console.log("Drawing path:", planPoints);
+
+        if (planPoints.length > 0) {
+
+            ctx.beginPath();
+
+            for (let i = 0; i < planPoints.length; i++) {
+
+
+                const worldX = planPoints[i][0];
+                const worldY = planPoints[i][1];
+
+                const pixelX =
+                    (worldX - originX) / resolution;
+
+                const pixelY =
+                    canvas.height -
+                    ((worldY - originY) / resolution);
+                
+                console.log(
+                    "Pixel:",
+                    pixelX,
+                    pixelY
+                );
+
+                if (i === 0) {
+
+                    ctx.moveTo(
+                        pixelX,
+                        pixelY,
+                    );
+
+                } else {
+
+                    ctx.lineTo(
+                        pixelX,
+                        pixelY,
+                    );
+
+                }
+
+            }
+
+            ctx.strokeStyle = "cyan";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+        }
+    
+
         if (goalMarker) {
 
             ctx.beginPath();
@@ -103,8 +182,8 @@ export function renderMap(mapFrame) {
             ctx.fill();
 
         }
+
     };
-    
 
     mapImage.src =
         `data:image/png;base64,${mapFrame.image}`;
@@ -157,3 +236,4 @@ canvas.addEventListener("click", (event) => {
     renderMap(latestMapFrame);
 
 });
+
