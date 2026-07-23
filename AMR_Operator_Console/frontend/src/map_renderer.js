@@ -41,9 +41,20 @@ export function renderMap(mapFrame) {
 
     mapImage.onload = () => {
 
-        // Draw occupancy map
+        // Draw occupancy map.
+        // A ROS OccupancyGrid is row-major BOTTOM-UP: grid row 0 is the lowest
+        // world y, with y increasing upward. The encoder ships those rows in the
+        // same order, but PNG/canvas row 0 is the TOP -- so drawing it as-is
+        // renders the map upside-down relative to the robot-pose math below
+        // (which correctly treats world +y as up). Flip vertically on draw so the
+        // map, the marker, and RViz all agree. (Root cause is really the encoder
+        // emitting bottom-up rows; if that is ever fixed, remove this flip.)
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(0, canvas.height);
+        ctx.scale(1, -1);
         ctx.drawImage(mapImage, 0, 0);
+        ctx.restore();
 
         // Task 7: Draw robot marker
         if (!mapFrame.pose) {

@@ -41,10 +41,26 @@ class FakePicoNode(Node):
         )
 
     def _on_wheel_setpoints(self, msg: WheelSetpoints):
-        """Store the latest wheel speed commands."""
+        """Store the latest wheel speed commands (and announce them)."""
 
         self.left_speed = msg.left_speed
         self.right_speed = msg.right_speed
+
+        # Demo visibility: the "Pico" reports what it is driving the motors at.
+        left = msg.left_speed
+        right = msg.right_speed
+        if abs(left) < 1e-3 and abs(right) < 1e-3:
+            motion = "STOP"
+        elif abs(left - right) < 1e-3:
+            motion = "forward" if left > 0 else "reverse"
+        elif right > left:
+            motion = "turning left"
+        else:
+            motion = "turning right"
+
+        self.get_logger().info(
+            f"MOTORS  LEFT ← {left:+.2f}  RIGHT ← {right:+.2f}   ({motion})"
+        )
 
     def _timer_callback(self):
         dt = 0.05
