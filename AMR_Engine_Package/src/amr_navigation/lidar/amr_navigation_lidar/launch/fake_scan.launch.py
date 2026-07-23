@@ -8,11 +8,36 @@ import os
 
 def generate_launch_description():
 
-    fake_scan_node = Node(
+    front_scan_node = Node(
         package="amr_navigation_lidar",
         executable="fake_scan_publisher",
-        name="fake_scan_publisher",
+        name="fake_scan_front",
         output="screen",
+        parameters=[
+            {
+                "scan_topic": "/scan_front",
+                "frame_id": "front_laser",
+                "mount_x": 0.25,
+                "mount_y": 0.0,
+                "mount_yaw": 0.0,
+            }
+        ],
+    )
+
+    rear_scan_node = Node(
+        package="amr_navigation_lidar",
+        executable="fake_scan_publisher",
+        name="fake_scan_rear",
+        output="screen",
+        parameters=[
+            {
+                "scan_topic": "/scan_rear",
+                "frame_id": "rear_laser",
+                "mount_x": -0.25,
+                "mount_y": 0.0,
+                "mount_yaw": 3.14159,
+            }
+        ],
     )
 
     static_tf_launch = IncludeLaunchDescription(
@@ -25,7 +50,10 @@ def generate_launch_description():
         )
     )
 
-    return LaunchDescription([
-        fake_scan_node,
-        static_tf_launch,
-    ])
+    return LaunchDescription(
+        [
+            front_scan_node,
+            rear_scan_node,
+            static_tf_launch,
+        ]
+    )

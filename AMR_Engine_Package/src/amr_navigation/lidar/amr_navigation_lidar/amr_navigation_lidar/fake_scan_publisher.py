@@ -12,15 +12,44 @@ class FakeScanPublisher(Node):
     def __init__(self):
         super().__init__("fake_scan_publisher")
 
+        self.declare_parameter("scan_topic", "/scan")
+        self.declare_parameter("frame_id", "laser")
+
+        scan_topic = self.get_parameter(
+            "scan_topic"
+        ).get_parameter_value().string_value
+
+        self.frame_id = self.get_parameter(
+            "frame_id"
+        ).get_parameter_value().string_value
+
+        self.declare_parameter("mount_x", 0.0)
+        self.declare_parameter("mount_y", 0.0)
+        self.declare_parameter("mount_yaw", 0.0)
+
+        self.mount_x = self.get_parameter(
+            "mount_x"
+        ).get_parameter_value().double_value
+
+        self.mount_y = self.get_parameter(
+            "mount_y"
+        ).get_parameter_value().double_value
+
+        self.mount_yaw = self.get_parameter(
+            "mount_yaw"
+        ).get_parameter_value().double_value
+
         self.publisher = self.create_publisher(
             LaserScan,
-            "/scan",
+            scan_topic,
             10,
         )
 
         self.timer = self.create_timer(0.1, self.publish_scan)
 
-        self.get_logger().info("Fake Scan Publisher Started")
+        self.get_logger().info(
+            f"Publishing on {scan_topic} with frame {self.frame_id}"
+        )
 
     def publish_scan(self):
         scan = LaserScan()
@@ -28,7 +57,7 @@ class FakeScanPublisher(Node):
         now = self.get_clock().now().to_msg()
 
         scan.header.stamp = now
-        scan.header.frame_id = "laser"
+        scan.header.frame_id = self.frame_id
 
         scan.angle_min = -math.pi
         scan.angle_max = math.pi
