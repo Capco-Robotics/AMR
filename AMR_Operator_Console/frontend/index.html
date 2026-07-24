@@ -10,6 +10,49 @@
   <button id="goal-toggle">
     Set Goal
   </button>
+  <button id="draw-toggle">
+    Draw Path
+</button>
+
+<div id="draw-controls">
+
+    <label>
+        ε :
+        <input
+            id="epsilon-slider"
+            type="range"
+            min="0.02"
+            max="0.40"
+            step="0.01"
+            value="0.10">
+    </label>
+
+    <span id="epsilon-value">
+        0.10 m
+    </span>
+
+    <br>
+
+    <button id="send-path-btn">
+        Send Path
+    </button>
+
+    <button id="redraw-path-btn">
+        Redraw
+    </button>
+
+    <button id="clear-path-btn">
+        Clear
+    </button>
+
+</div>
+
+<div id="path-status">
+
+    Path Status :
+    Idle
+
+</div>
   <canvas id="map-canvas" width="600" height="600"></canvas>
   <div id="status-panel"></div>
   <div id="battery-panel"></div>
@@ -22,10 +65,40 @@
     </div>
 
     <button data-key="s">Backward</button>
+    </div>
+
+  <div id="map-panel">
+
+  <h3>Map Manager</h3>
+
+  <div id="slam-mode">
+    Mode : Unknown
   </div>
+
+  <input
+      id="map-name"
+      type="text"
+      placeholder="Map name"
+  >
+
+  <button id="save-map-btn">
+      Save Map
+  </button>
+
+  <button id="refresh-map-btn">
+      Refresh
+  </button>
+
+  <hr>
+
+  <div id="map-list"></div>
+
+</div>
+
   <script type="module" src="src/ws_client.js"></script>
   <script type="module" src="src/map_renderer.js"></script>
   <script type="module" src="src/status_panel.js"></script>
   <script type="module" src="src/battery_panel.js"></script>
+  <script type="module" src="src/map_panel.js"></script>
 </body>
 </html>
