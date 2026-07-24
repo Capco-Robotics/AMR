@@ -4,33 +4,33 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
-    laser_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='laser_static_tf',
+    front_laser_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="front_laser_static_tf",
         arguments=[
-            # TODO:
-            # Confirm both LiDAR mount poses (x, y, z, yaw)
-            # after hardware installation.
-            # Keep this file as the single source of truth
-            # for all LiDAR static transforms.
-
-            '0', '0', '0.0',      # x y z
-
-            # yaw pitch roll
-            '0', '0', '0',
-
-            'base_link',
-            'laser'
+            "0.4", "0.4", "0.0",
+            "0", "0", "0",
+            "base_link",
+            "laser_front_left",
         ],
-        output='screen',
+        output="screen",
     )
 
-    # Future second LiDAR transform.
-    # TODO:
-    # Add another static_transform_publisher here
-    # when the rear LiDAR is installed.
+    rear_laser_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="rear_laser_static_tf",
+        arguments=[
+            "-0.4", "-0.4", "0.0",
+            "3.14159", "0", "0",
+            "base_link",
+            "laser_rear_right",
+        ],
+        output="screen",
+    )
 
     return LaunchDescription([
-        laser_tf,
+        front_laser_tf,
+        rear_laser_tf,
     ])

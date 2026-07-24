@@ -1,3 +1,9 @@
+import os
+
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -34,7 +40,20 @@ def generate_launch_description():
         }],
     )
 
+    lidar_pkg = get_package_share_directory("amr_navigation_lidar")
+
+    static_tf_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                lidar_pkg,
+                "launch",
+                "static_tf.launch.py",
+            )
+        )
+    )
+
     return LaunchDescription([
+        static_tf_launch,
         fake_scan_front,
         fake_scan_rear,
     ])
