@@ -10,6 +10,49 @@
   <button id="goal-toggle">
     Set Goal
   </button>
+  <button id="draw-toggle">
+    Draw Path
+</button>
+
+<div id="draw-controls">
+
+    <label>
+        ε :
+        <input
+            id="epsilon-slider"
+            type="range"
+            min="0.02"
+            max="0.40"
+            step="0.01"
+            value="0.10">
+    </label>
+
+    <span id="epsilon-value">
+        0.10 m
+    </span>
+
+    <br>
+
+    <button id="send-path-btn">
+        Send Path
+    </button>
+
+    <button id="redraw-path-btn">
+        Redraw
+    </button>
+
+    <button id="clear-path-btn">
+        Clear
+    </button>
+
+</div>
+
+<div id="path-status">
+
+    Path Status :
+    Idle
+
+</div>
   <canvas id="map-canvas" width="600" height="600"></canvas>
   <div id="status-panel"></div>
   <div id="battery-panel"></div>
