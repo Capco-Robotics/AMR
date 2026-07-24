@@ -2,7 +2,10 @@
 // amr_lift / amr_error via amr_command.
 
 import { connect } from "./ws_client.js";
-import { renderMap } from './map_renderer.js';
+import {
+    renderMap,
+    updatePlan,
+} from "./map_renderer.js";
 import { renderBattery } from './battery_panel.js';
 
 const panel = document.getElementById('status-panel');
@@ -25,6 +28,10 @@ connect((frame) => {
 
         case "status":
             renderStatus(frame);
+            break;
+
+        case "plan":
+            updatePlan(frame);
             break;
 
     }
