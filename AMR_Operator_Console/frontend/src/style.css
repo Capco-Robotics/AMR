@@ -84,3 +84,36 @@ body {
     background: #c62828;
 
 }
+#draw-controls{
+
+    margin-top:15px;
+
+    display:none;
+
+    padding:10px;
+
+    border:1px solid #aaa;
+
+    border-radius:6px;
+
+}
+
+#draw-controls button{
+
+    margin:5px;
+
+}
+
+#epsilon-slider{
+
+    width:180px;
+
+}
+
+#path-status{
+
+    margin-top:10px;
+
+    font-weight:bold;
+
+}
