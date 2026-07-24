@@ -3,6 +3,7 @@ let ws = null;
 let mapListContainer = null;
 let mapNameInput = null;
 let modeIndicator = null;
+let toast = null;
 
 export function initMapPanel() {
     
@@ -20,6 +21,17 @@ export function initMapPanel() {
         .getElementById("refresh-map-btn")
         .addEventListener("click", refreshMaps);
 
+    toast = document.getElementById("toast");
+
+    if (!toast) {
+
+        toast = document.createElement("div");
+
+        toast.id = "toast";
+
+        document.body.appendChild(toast);
+
+    }
     refreshMaps();
 }
 
@@ -66,7 +78,7 @@ export function handleMapFrame(frame) {
 
             if(frame.ok){
 
-                alert("Operation Successful");
+                showToast("Operation Successful", true);
 
                 refreshMaps();
 
@@ -74,7 +86,7 @@ export function handleMapFrame(frame) {
 
             else{
 
-                alert(frame.error);
+                showToast(frame.error, false);
 
             }
 
@@ -128,5 +140,23 @@ function drawMapList(maps){
         mapListContainer.appendChild(row);
 
     });
+
+}
+
+function showToast(message, success) {
+
+    toast.innerText = message;
+
+    toast.className = success
+        ? "toast-success"
+        : "toast-error";
+
+    toast.style.display = "block";
+
+    setTimeout(() => {
+
+        toast.style.display = "none";
+
+    }, 2500);
 
 }
