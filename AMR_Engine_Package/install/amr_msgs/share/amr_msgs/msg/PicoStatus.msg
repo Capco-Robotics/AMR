@@ -1,0 +1,5 @@
+std_msgs/Header header
+uint32 uptime_ms
+uint32 last_rpi_msg_age_ms
+uint32 watchdog_resets
+uint32 free_mem_bytes

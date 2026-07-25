@@ -1,0 +1,21 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from amr_msgs/msg/FaultCodes.msg
+// generated code does not contain a copyright notice
+
+
+module amr_msgs {
+  module msg {
+    module FaultCodes_Constants {
+      const uint8 NONE = 0;
+      const uint8 LIFT_OVERCURRENT = 1;
+      const uint8 LIFT_UNDERCURRENT = 2;
+      const uint8 LIFT_SLANT = 3;
+      const uint8 LIFT_LIMIT_SWITCH = 4;
+      const uint8 LIFT_SENSOR_FAILURE = 5;
+      const uint8 LIFT_TIMEOUT = 6;
+    };
+    struct FaultCodes {
+      uint8 structure_needs_at_least_one_member;
+    };
+  };
+};

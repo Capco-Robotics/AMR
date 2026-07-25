@@ -1,0 +1,23 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from amr_msgs/srv/GetPicoStatus.srv
+// generated code does not contain a copyright notice
+
+
+module amr_msgs {
+  module srv {
+    struct GetPicoStatus_Request {
+      uint8 structure_needs_at_least_one_member;
+    };
+    struct GetPicoStatus_Response {
+      uint32 uptime_ms;
+
+      uint32 last_rpi_msg_age_ms;
+
+      uint32 watchdog_resets;
+
+      uint32 free_mem_bytes;
+
+      boolean available;
+    };
+  };
+};

@@ -17,6 +17,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
+from amr_command.path_executor import PathExecutor
 
 class OperatorInputArbiter:
 
@@ -51,6 +52,8 @@ class CommandGatewayNode(Node):
         self.websocket_server._on_message_cb = self._on_ws_frame
 
         self.arbiter = OperatorInputArbiter()
+
+        self.path_executor = PathExecutor(self)
 
         self._latest_pose = None
 
@@ -145,6 +148,18 @@ class CommandGatewayNode(Node):
                 self.get_logger().info(
                     f"Goal published ({x:.2f}, {y:.2f})"
                 )
+
+            elif frame_type == "nav_path":
+
+                waypoints = data.get("points", [])
+
+                if not waypoints:
+                    self.get_logger().warning(
+                        "Received empty path"
+                    )
+                    return
+
+                self.path_executor.send_path(waypoints)
 
         except Exception as e:
             self.get_logger().error(str(e))
