@@ -27,6 +27,27 @@ export function connect(onMessage) {
 
 export let websocket = null;
 
+export function sendMessage(message)
+{
+
+    if(websocket === null)
+    {
+        return;
+    }
+
+
+    if(websocket.readyState !== WebSocket.OPEN)
+    {
+        return;
+    }
+
+
+    websocket.send(
+        JSON.stringify(message)
+    );
+
+}
+
 
 function handleTelemetryFrame(data) {
 
@@ -48,6 +69,10 @@ function handleTelemetryFrame(data) {
             renderStatus(data);
             break;
 
+        case "path_status":
+            renderStatus(data);
+            break;
+
         case "map_list":
         case "map_op_result":
         case "slam_mode":
@@ -57,8 +82,6 @@ function handleTelemetryFrame(data) {
             break;
 
     }
-
-    console.log("Telemetry frame received:", data);
 
 }
 
@@ -80,6 +103,8 @@ websocket.onopen = () => {
     initMapPanel();
 
 };
+
+
 
 const goalButton =
     document.getElementById("goal-toggle");
