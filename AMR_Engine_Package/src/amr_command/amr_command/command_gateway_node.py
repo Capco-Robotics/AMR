@@ -249,7 +249,45 @@ class CommandGatewayNode(Node):
                 self.get_logger().info(
                     f"Goal published ({x:.2f}, {y:.2f})"
                 )
-            
+
+
+            elif frame_type == "nav_path":
+
+                points = data.get("points", [])
+
+                if not isinstance(points, list):
+
+                    self.get_logger().warning(
+                        "Rejected invalid path"
+                    )
+
+                    return
+
+
+                for p in points:
+
+                    if (
+                        not isinstance(p, list)
+                        or len(p) != 3
+                        or not all(
+                            isinstance(v, (int, float))
+                            and math.isfinite(v)
+                            for v in p
+                        )
+                    ):
+
+                        self.get_logger().warning(
+                            "Rejected invalid path points"
+                        )
+
+                        return
+
+
+                self.get_logger().info(
+                    f"Received nav_path with {len(points)} points"
+                )
+
+
             elif frame_type == "map_save":
 
                 map_name = self._sanitize_map_name(

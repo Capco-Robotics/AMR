@@ -117,3 +117,28 @@ body {
     font-weight:bold;
 
 }
+.path-item {
+    margin: 5px;
+}
+
+.path-item button {
+    margin-left: 5px;
+}
+
+#toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px;
+    display: none;
+}
+
+.toast-success {
+    background: green;
+    color:white;
+}
+
+.toast-error {
+    background:red;
+    color:white;
+}
