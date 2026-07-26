@@ -7,21 +7,95 @@ import { renderBattery } from './battery_panel.js';
 
 const panel = document.getElementById('status-panel');
 
-function renderStatus(statusFrame) {
-  // TODO: panel.textContent = JSON.stringify(statusFrame), etc.
+const robots = new Map();
+let selectedRobot = null;
+
+
+function updateRobotSelector() {
+
+    let selector = document.getElementById("robot-selector");
+
+    if (!selector) {
+        selector = document.createElement("select");
+        selector.id = "robot-selector";
+
+        panel.prepend(selector);
+
+        selector.onchange = () => {
+            selectedRobot = selector.value;
+            console.log("Selected robot:", selectedRobot);
+        };
+    }
+
+    selector.innerHTML = "";
+
+    robots.forEach((_, robotId) => {
+
+        const option = document.createElement("option");
+        option.value = robotId;
+        option.textContent = robotId;
+
+        selector.appendChild(option);
+
+    });
+
+    if (!selectedRobot && robots.size > 0) {
+        selectedRobot = robots.keys().next().value;
+        selector.value = selectedRobot;
+    }
+    if (selectedRobot) {
+    selector.value = selectedRobot;
 }
 
+}
+
+
+function renderStatus(statusFrame) {
+
+    if (selectedRobot !== statusFrame.robot_id) {
+        return;
+    }
+
+    console.log(
+        "Status:",
+        statusFrame
+    );
+
+}
+
+
 connect((frame) => {
+
+    if (!frame.robot_id || frame.v !== 1) {
+        console.warn("Invalid frame:", frame);
+        return;
+    }
+
+
+    robots.set(
+        frame.robot_id,
+        frame
+    );
+
+
+    updateRobotSelector();
+
 
     switch (frame.type) {
 
         case "map":
-            renderMap(frame);
+            if (selectedRobot === frame.robot_id) {
+                renderMap(frame);
+            }
             break;
 
+
         case "battery":
-            renderBattery(frame);
+            if (selectedRobot === frame.robot_id) {
+                renderBattery(frame);
+            }
             break;
+
 
         case "status":
             renderStatus(frame);

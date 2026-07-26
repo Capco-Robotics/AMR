@@ -1,3 +1,4 @@
+import { getSelectedRobot } from "./ws_client.js";
 const DRIVE_LINEAR_SPEED = 0.4;
 const DRIVE_ANGULAR_SPEED = 1.0;
 
@@ -24,6 +25,8 @@ function _computeDriveFrame(keys) {
     }
 
     return {
+        v: 1,
+        robot_id: getSelectedRobot(),
         type: "drive",
         linear,
         angular,

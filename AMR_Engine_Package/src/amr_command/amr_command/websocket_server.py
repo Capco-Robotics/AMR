@@ -7,16 +7,37 @@ import json
 import websockets
 
 class WebsocketServer:
-    def __init__(self, host: str = '0.0.0.0', port: int = 8765):
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8765,
+        robot_id: str = "amr-01",
+    ):
         self.host = host
         self.port = port
+        self.robot_id = robot_id
         self.connections = set()
         self._on_message_cb = None
         self.loop = None
 
+
+
     async def _handle_client(self, websocket):
         try:
             self.connections.add(websocket)
+            await websocket.send(
+    json.dumps(
+        {
+            "robot_id": self.robot_id,
+            "v": 1,
+            "type": "hello",
+            "capabilities": [
+                "drive",
+                "map",
+            ],
+        }
+    )
+)
             async for message in websocket:
                 frame = json.loads(message)
                 print("Received:", frame)

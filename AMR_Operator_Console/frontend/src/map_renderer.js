@@ -1,6 +1,11 @@
 // Renders the SLAM occupancy grid (sent by amr_command's map_encoder as a
 // PNG/compact image) plus a robot-pose marker, onto the <canvas> 2D context.
-import { websocket } from "./ws_client.js";
+
+import {
+    websocket,
+    getSelectedRobot,
+} from "./ws_client.js";
+
 const canvas = document.getElementById("map-canvas");
 const ctx = canvas.getContext("2d");
 
@@ -26,6 +31,7 @@ export function renderMap(mapFrame) {
     if (!mapFrame || !mapFrame.image) {
         return;
     }
+
     latestMapFrame = mapFrame;
 
     // Task 6: Resize canvas only when map size changes
@@ -49,7 +55,9 @@ export function renderMap(mapFrame) {
         // (which correctly treats world +y as up). Flip vertically on draw so the
         // map, the marker, and RViz all agree. (Root cause is really the encoder
         // emitting bottom-up rows; if that is ever fixed, remove this flip.)
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
         ctx.save();
         ctx.translate(0, canvas.height);
         ctx.scale(1, -1);
@@ -110,12 +118,9 @@ export function renderMap(mapFrame) {
             );
 
             ctx.fillStyle = "lime";
-
             ctx.fill();
-
         }
     };
-    
 
     mapImage.src =
         `data:image/png;base64,${mapFrame.image}`;
@@ -156,6 +161,8 @@ canvas.addEventListener("click", (event) => {
 
         websocket.send(
             JSON.stringify({
+                v: 1,
+                robot_id: getSelectedRobot(),
                 type: "nav_goal",
                 x: worldX,
                 y: worldY,

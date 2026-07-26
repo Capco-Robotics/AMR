@@ -46,6 +46,16 @@ class CommandGatewayNode(Node):
     def __init__(self):
         super().__init__("amr_command")
         self.get_logger().info("CommandGatewayNode started")
+        self.declare_parameter(
+            "robot_id",
+            "amr-01",
+        )
+
+        self.robot_id = (
+            self.get_parameter("robot_id")
+            .get_parameter_value()
+            .string_value
+        )
 
         self.websocket_server = WebsocketServer()
         self.websocket_server._on_message_cb = self._on_ws_frame
@@ -92,11 +102,36 @@ class CommandGatewayNode(Node):
 
         self.get_logger().info("CommandGatewayNode initialized")
 
+    def _wrap_frame(self, frame: dict) -> dict:
+        wrapped = dict(frame)
+        wrapped["robot_id"] = self.robot_id
+        wrapped["v"] = 1
+        return wrapped
+
     def _run_ws(self):
         asyncio.run(self.websocket_server.start())
 
     def _on_ws_frame(self, data):
         try:
+            robot_id = data.get("robot_id")
+
+            if robot_id is None:
+                self.get_logger().warning(
+                    "Dropping frame: missing robot_id"
+                )
+                return
+
+            if robot_id != self.robot_id:
+                self.get_logger().warning(
+                    f"Dropping frame for robot_id={robot_id}"
+                )
+                return
+
+            if data.get("v", 1) != 1:
+                self.get_logger().warning(
+                    f"Unsupported protocol version: {data.get('v')}"
+                )
+                return
 
             frame_type = data.get("type")
 
@@ -175,6 +210,7 @@ class CommandGatewayNode(Node):
             frame = encode_occupancy_grid(msg)
             frame["type"] = "map"
             frame["pose"] = self._latest_pose
+            frame = self._wrap_frame(frame)
 
             if self.websocket_server.loop:
                 asyncio.run_coroutine_threadsafe(
