@@ -8,6 +8,7 @@ install(DIRECTORY config launch
 )
 install(PROGRAMS
   test_scripts/fake_scan_publisher.py
+  test_scripts/path_eval.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()
