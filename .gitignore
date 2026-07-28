@@ -221,3 +221,16 @@ AMR_Engine_Package/src/amr_navigation/map/maps/*.posegraph
 AMR_Engine_Package/src/amr_navigation/map/maps/*.data
 AMR_Engine_Package/src/amr_navigation/map/maps/*.pgm
 AMR_Engine_Package/src/amr_navigation/map/maps/*.yaml
+
+# colcon build artifacts.
+# These were previously excluded only through .git/info/exclude, which is
+# machine-local and not shared by a clone -- so a contributor whose machine
+# lacked that file committed 582 of these by accident. Track the rule here
+# instead so it applies to everyone.
+AMR_Engine_Package/build/
+AMR_Engine_Package/install/
+AMR_Engine_Package/log/
+
+# `ros2 run tf2_tools view_frames` output
+frames_*.gv
+frames_*.pdf
