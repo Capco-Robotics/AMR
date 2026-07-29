@@ -7,7 +7,11 @@ amr_msgs/LiftState for the Pico's closed-loop position/limit-switch feedback.
 import time
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse
+from rclpy.action import (
+    ActionServer,
+    CancelResponse,
+    GoalResponse,
+)
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 
@@ -17,6 +21,8 @@ from rclpy.executors import MultiThreadedExecutor
 from amr_msgs.action import MoveLift
 from amr_msgs.msg import LiftCommand, LiftState
 from amr_msgs.srv import SetLiftTarget
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from amr_msgs.msg import FaultCodes
 
 
 class LiftControlNode(Node):
@@ -26,11 +32,15 @@ class LiftControlNode(Node):
 
         self.callback_group = ReentrantCallbackGroup()
         self.MAX_POSITION = 1.0
+        self.declare_parameter("overcurrent_threshold", 6.0)
 
         # Current lift state
         self.current_position = 0.0
         self.limit_upper = False
         self.limit_lower = False
+        self.actuator_current = [0.0, 0.0]
+        self.level_fault = False
+        self._goal_active = False
 
         # Publisher
         self.command_pub = self.create_publisher(
@@ -48,6 +58,13 @@ class LiftControlNode(Node):
             callback_group=self.callback_group,
         )
 
+        #Publisher
+        self.diagnostic_pub = self.create_publisher(
+            DiagnosticArray,
+            "/diagnostics",
+            10,
+        )
+
         # Service
         self.create_service(
             SetLiftTarget,
@@ -63,6 +80,7 @@ class LiftControlNode(Node):
             "move_lift",
             self._execute_move_lift,
             callback_group=self.callback_group,
+            goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
         )
 
@@ -72,8 +90,18 @@ class LiftControlNode(Node):
         self.current_position = msg.position
         self.limit_upper = msg.limit_upper
         self.limit_lower = msg.limit_lower
+        self.actuator_current = list(msg.actuator_current)
+        self.level_fault = msg.level_fault
 
     def _handle_set_lift_target(self, request, response):
+
+        if self._goal_active:
+            self.get_logger().warn(
+                "Rejecting service request: action in progress"
+            )
+
+            response.accepted = False
+            return response
 
         if request.target_position < 0.0 or request.target_position > self.MAX_POSITION:
             self.get_logger().warn(
@@ -111,7 +139,10 @@ class LiftControlNode(Node):
             result.success = False
             result.final_position = self.current_position
 
+            self._goal_active = False
             return result
+
+        self._goal_active = True
 
         self.get_logger().info(
             f"Execute callback started. Target={target:.2f}"
@@ -129,16 +160,70 @@ class LiftControlNode(Node):
         start_time = time.time()
         TIMEOUT = 10.0
 
-        rate = self.create_rate(10)
         while abs(self.current_position - target) > 0.01:
 
-            if time.time() - start_time > TIMEOUT:
-                self.get_logger().error("Lift movement timed out")
+            threshold = self.get_parameter(
+                "overcurrent_threshold"
+            ).value
+
+            self.get_logger().info(
+                f"DEBUG: current={self.actuator_current}, "
+                f"threshold={threshold}, "
+                f"position={self.current_position:.2f}"
+            )
+
+            if max(self.actuator_current) > threshold:
+
+                self.get_logger().error(
+                    "Lift overcurrent detected"
+                )
+
+                self._publish_fault(
+                    "LIFT_OVERCURRENT",
+                    FaultCodes.LIFT_OVERCURRENT
+                )
+
                 goal_handle.abort()
 
                 result = MoveLift.Result()
                 result.success = False
                 result.final_position = self.current_position
+
+                self._goal_active = False
+                return result
+
+            if self.level_fault:
+
+                self.get_logger().error(
+                    "Lift slant detected"
+                )
+
+                self._publish_fault(
+                    "LIFT_SLANT",
+                    FaultCodes.LIFT_SLANT
+                )
+
+                goal_handle.abort()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+
+                self._goal_active = False
+                return result
+
+            if time.time() - start_time > TIMEOUT:
+                self.get_logger().error("Lift movement timed out")
+                self._publish_fault(
+                    "LIFT_TIMEOUT",
+                    FaultCodes.LIFT_TIMEOUT
+                )
+                goal_handle.abort()
+
+                result = MoveLift.Result()
+                result.success = False
+                result.final_position = self.current_position
+                self._goal_active = False
                 return result
             
             if self.limit_upper and target >= self.MAX_POSITION:
@@ -148,6 +233,7 @@ class LiftControlNode(Node):
                 result = MoveLift.Result()
                 result.success = False
                 result.final_position = self.current_position
+                self._goal_active = False
                 return result
 
             if self.limit_lower and target <= 0.0:
@@ -157,6 +243,7 @@ class LiftControlNode(Node):
                 result = MoveLift.Result()
                 result.success = False
                 result.final_position = self.current_position
+                self._goal_active = False
                 return result
 
             if goal_handle.is_cancel_requested:
@@ -165,7 +252,7 @@ class LiftControlNode(Node):
                 result = MoveLift.Result()
                 result.success = False
                 result.final_position = self.current_position
-
+                self._goal_active = False
                 return result
 
             self.get_logger().debug(
@@ -178,16 +265,47 @@ class LiftControlNode(Node):
 
             goal_handle.publish_feedback(feedback)
 
-            rate.sleep()
+            time.sleep(0.1)
 
         goal_handle.succeed()
 
         result = MoveLift.Result()
         result.success = True
         result.final_position = self.current_position
-
+        self._goal_active = False
+        self._goal_active = False
         return result
+
+    def _publish_fault(self, fault_name, fault_code):
+
+        diagnostics = DiagnosticArray()
+
+        status = DiagnosticStatus()
+        status.level = DiagnosticStatus.ERROR
+        status.name = fault_name
+        status.message = fault_name
+
+        status.values.append(
+            KeyValue(
+                key="fault_code",
+                value=str(fault_code)
+            )
+        )
+
+        diagnostics.status.append(status)
+
+        self.diagnostic_pub.publish(diagnostics)
     
+    def _goal_callback(self, goal_request):
+
+        if self._goal_active:
+            self.get_logger().warn(
+                "Rejecting goal: lift already busy"
+            )
+            return GoalResponse.REJECT
+
+        return GoalResponse.ACCEPT
+
     def _cancel_callback(self, cancel_request):
         self.get_logger().info("Cancel request received")
         return CancelResponse.ACCEPT
