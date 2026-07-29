@@ -32,7 +32,32 @@ import { initPanels } from "./panels.js";
 import { renderMap, updatePlan } from "./map_renderer.js";
 
 
-const WS_URL = 'ws://localhost:8765';
+// Follow whatever host served the page, rather than a hardcoded localhost.
+// The console is meant to be opened from a tablet or phone on the same
+// network as the robot, and there "localhost" is the phone -- the socket
+// would try to reach a gateway on the handset and never connect.
+// `?gateway=host[:port]` overrides, for serving the page from somewhere
+// other than the robot.
+const GATEWAY_PORT = 8765;
+
+function gatewayUrl() {
+
+    const override =
+        new URLSearchParams(window.location.search).get("gateway");
+
+    if (override) {
+        return override.includes(":")
+            ? `ws://${override}`
+            : `ws://${override}:${GATEWAY_PORT}`;
+    }
+
+    // Opened as a file:// URL there is no host to inherit, so fall back.
+    const host = window.location.hostname || "localhost";
+
+    return `ws://${host}:${GATEWAY_PORT}`;
+}
+
+const WS_URL = gatewayUrl();
 
 // Backing off avoids hammering a robot that is still booting, while staying
 // responsive to a gateway that only blipped.
