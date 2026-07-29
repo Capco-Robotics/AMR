@@ -14,20 +14,87 @@ let goalMarker = null;
 
 let planPoints = [];
 
+// The stroke the operator is drawing right now, as [x, y, theta] world
+// points. Painted as an overlay so the drag has visible feedback.
+let drawStroke = [];
+
+let drawMode = false;
+
 export function setGoalMode(enabled) {
 
     goalMode = enabled;
 
+    updateCursor();
+}
+
+export function setDrawMode(enabled) {
+
+    drawMode = enabled;
+
+    updateCursor();
+}
+
+function updateCursor() {
+
     canvas.style.cursor =
-        enabled ? "crosshair" : "default";
+        (goalMode || drawMode) ? "crosshair" : "default";
+}
+
+export function setDrawStroke(points) {
+
+    drawStroke = points || [];
+
+    repaint();
+}
+
+/**
+ * Convert a pointer event's client coordinates to world metres, using the
+ * latest map's origin/resolution. Returns null when no map has arrived yet
+ * (there is no frame of reference to convert into).
+ */
+export function canvasToWorld(clientX, clientY) {
+
+    if (!latestMapFrame) {
+        return null;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+
+    // The canvas is resized to the map's pixel dimensions but laid out by CSS,
+    // so client coords have to be scaled back into canvas space first.
+    const pixelX =
+        (clientX - rect.left) * (canvas.width / rect.width);
+
+    const pixelY =
+        (clientY - rect.top) * (canvas.height / rect.height);
+
+    return {
+        x:
+            latestMapFrame.origin.x +
+            pixelX * latestMapFrame.resolution,
+        y:
+            latestMapFrame.origin.y +
+            (canvas.height - pixelY) * latestMapFrame.resolution,
+        pixelX: pixelX,
+        pixelY: pixelY,
+    };
+}
+
+function worldToPixel(worldX, worldY) {
+
+    const resolution = latestMapFrame.resolution;
+
+    return {
+        x: (worldX - latestMapFrame.origin.x) / resolution,
+        y:
+            canvas.height -
+            ((worldY - latestMapFrame.origin.y) / resolution),
+    };
 }
 
 export function updatePlan(planFrame) {
 
     planPoints = planFrame.points || [];
-
-    console.log("PLAN FRAME:", planFrame);
-    console.log("PLAN POINTS:", planPoints);
 
     if (
         planPoints.length === 0
@@ -35,9 +102,7 @@ export function updatePlan(planFrame) {
         goalMarker = null;
     }
 
-    if (latestMapFrame) {
-        renderMap(latestMapFrame);
-    }
+    repaint();
 
 }
 
@@ -58,177 +123,145 @@ export function renderMap(mapFrame) {
         canvas.height = mapFrame.height;
     }
 
-    mapImage = new Image();
+    const image = new Image();
 
-    mapImage.onload = () => {
+    // Decode off the critical path, then hand the finished bitmap to repaint.
+    // Everything that actually paints lives in repaint() so that overlays (the
+    // in-progress stroke, the goal marker) can be redrawn at pointer rate
+    // without re-decoding the map PNG each time.
+    image.onload = () => {
 
-        // Draw occupancy map.
-        // A ROS OccupancyGrid is row-major BOTTOM-UP: grid row 0 is the lowest
-        // world y, with y increasing upward. The encoder ships those rows in the
-        // same order, but PNG/canvas row 0 is the TOP -- so drawing it as-is
-        // renders the map upside-down relative to the robot-pose math below
-        // (which correctly treats world +y as up). Flip vertically on draw so the
-        // map, the marker, and RViz all agree. (Root cause is really the encoder
-        // emitting bottom-up rows; if that is ever fixed, remove this flip.)
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.translate(0, canvas.height);
-        ctx.scale(1, -1);
-        ctx.drawImage(mapImage, 0, 0);
-        ctx.restore();
+        mapImage = image;
 
-        // Task 7: Draw robot marker
-        if (!mapFrame.pose) {
-            return;
-        }
+        repaint();
 
-        const resolution = mapFrame.resolution;
+    };
 
-        const originX = mapFrame.origin.x;
-        const originY = mapFrame.origin.y;
+    image.src =
+        `data:image/png;base64,${mapFrame.image}`;
+}
 
-        const robotX =
-            (mapFrame.pose.x - originX) / resolution;
+function repaint() {
 
-        const robotY =
-            canvas.height -
-            ((mapFrame.pose.y - originY) / resolution);
+    if (!mapImage || !latestMapFrame) {
+        return;
+    }
+
+    const mapFrame = latestMapFrame;
+
+    // Draw occupancy map.
+    // A ROS OccupancyGrid is row-major BOTTOM-UP: grid row 0 is the lowest
+    // world y, with y increasing upward. The encoder ships those rows in the
+    // same order, but PNG/canvas row 0 is the TOP -- so drawing it as-is
+    // renders the map upside-down relative to the robot-pose math below
+    // (which correctly treats world +y as up). Flip vertically on draw so the
+    // map, the marker, and RViz all agree. (Root cause is really the encoder
+    // emitting bottom-up rows; if that is ever fixed, remove this flip.)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(0, canvas.height);
+    ctx.scale(1, -1);
+    ctx.drawImage(mapImage, 0, 0);
+    ctx.restore();
+
+    // Task 7: Draw robot marker. A map can arrive before the first odom frame,
+    // so treat the pose as optional -- the overlays below still need painting.
+    if (mapFrame.pose) {
+
+        const robot = worldToPixel(mapFrame.pose.x, mapFrame.pose.y);
 
         const yaw = mapFrame.pose.yaw || 0;
 
         // Robot body
         ctx.beginPath();
-        ctx.arc(robotX, robotY, 5, 0, Math.PI * 2);
+        ctx.arc(robot.x, robot.y, 5, 0, Math.PI * 2);
         ctx.fillStyle = "red";
         ctx.fill();
 
         // Heading line
         const lineLength = 15;
 
-        const endX =
-            robotX + Math.cos(yaw) * lineLength;
-
-        const endY =
-            robotY - Math.sin(yaw) * lineLength;
-
         ctx.beginPath();
-        ctx.moveTo(robotX, robotY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(robot.x, robot.y);
+        ctx.lineTo(
+            robot.x + Math.cos(yaw) * lineLength,
+            robot.y - Math.sin(yaw) * lineLength,
+        );
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        console.log(
-            "Origin:",
-            originX,
-            originY,
-            "Resolution:",
-            resolution
+    }
+
+    // Nav2's computed plan.
+    strokePolyline(planPoints, "cyan", 3);
+
+    // The operator's in-progress / simplified freehand stroke.
+    strokePolyline(drawStroke, "orange", 2);
+
+    if (goalMarker) {
+
+        ctx.beginPath();
+
+        ctx.arc(
+            goalMarker.x,
+            goalMarker.y,
+            6,
+            0,
+            Math.PI * 2
         );
 
-        console.log("Drawing path:", planPoints);
+        ctx.fillStyle = "lime";
 
-        if (planPoints.length > 0) {
+        ctx.fill();
 
-            ctx.beginPath();
+    }
 
-            for (let i = 0; i < planPoints.length; i++) {
+}
 
+function strokePolyline(points, colour, width) {
 
-                const worldX = planPoints[i][0];
-                const worldY = planPoints[i][1];
+    if (!points || points.length === 0) {
+        return;
+    }
 
-                const pixelX =
-                    (worldX - originX) / resolution;
+    ctx.beginPath();
 
-                const pixelY =
-                    canvas.height -
-                    ((worldY - originY) / resolution);
-                
-                console.log(
-                    "Pixel:",
-                    pixelX,
-                    pixelY
-                );
+    points.forEach((point, i) => {
 
-                if (i === 0) {
+        const pixel = worldToPixel(point[0], point[1]);
 
-                    ctx.moveTo(
-                        pixelX,
-                        pixelY,
-                    );
-
-                } else {
-
-                    ctx.lineTo(
-                        pixelX,
-                        pixelY,
-                    );
-
-                }
-
-            }
-
-            ctx.strokeStyle = "cyan";
-            ctx.lineWidth = 3;
-            ctx.stroke();
-
-        }
-    
-
-        if (goalMarker) {
-
-            ctx.beginPath();
-
-            ctx.arc(
-                goalMarker.x,
-                goalMarker.y,
-                6,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.fillStyle = "lime";
-
-            ctx.fill();
-
+        if (i === 0) {
+            ctx.moveTo(pixel.x, pixel.y);
+        } else {
+            ctx.lineTo(pixel.x, pixel.y);
         }
 
-    };
+    });
 
-    mapImage.src =
-        `data:image/png;base64,${mapFrame.image}`;
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = width;
+    ctx.stroke();
+
 }
 
 canvas.addEventListener("click", (event) => {
 
-    if (!goalMode || !latestMapFrame) {
+    // Draw mode owns the pointer while it is active; without this guard the
+    // click that ends a stroke would also fire off a one-shot nav_goal.
+    if (!goalMode || drawMode) {
         return;
     }
 
-    const rect = canvas.getBoundingClientRect();
+    const world = canvasToWorld(event.clientX, event.clientY);
 
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    const pixelX =
-        (event.clientX - rect.left) * scaleX;
-
-    const pixelY =
-        (event.clientY - rect.top) * scaleY;
-
-    const worldX =
-        latestMapFrame.origin.x +
-        pixelX * latestMapFrame.resolution;
-
-    const worldY =
-        latestMapFrame.origin.y +
-        (canvas.height - pixelY) *
-        latestMapFrame.resolution;
+    if (!world) {
+        return;
+    }
 
     goalMarker = {
-        x: pixelX,
-        y: pixelY,
+        x: world.pixelX,
+        y: world.pixelY,
     };
 
     if (websocket) {
@@ -236,15 +269,15 @@ canvas.addEventListener("click", (event) => {
         websocket.send(
             JSON.stringify({
                 type: "nav_goal",
-                x: worldX,
-                y: worldY,
+                x: world.x,
+                y: world.y,
                 theta: 0.0,
             })
         );
 
     }
 
-    renderMap(latestMapFrame);
+    repaint();
 
 });
 

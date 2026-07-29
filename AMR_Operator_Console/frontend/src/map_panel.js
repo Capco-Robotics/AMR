@@ -5,9 +5,13 @@ let mapNameInput = null;
 let modeIndicator = null;
 let toast = null;
 
-export function initMapPanel() {
-    
-    ws = window.wsClient;
+// Binds the panel's DOM once. Deliberately does NOT pull the map list -- the
+// socket is not necessarily open yet at bind time, and re-binding on every
+// (re)connect would stack duplicate click listeners on Save/Refresh. ws_client
+// calls refreshMaps() on open instead.
+export function initMapPanel(socket) {
+
+    ws = socket || window.wsClient;
 
     mapListContainer = document.getElementById("map-list");
     mapNameInput = document.getElementById("map-name");
@@ -32,7 +36,6 @@ export function initMapPanel() {
         document.body.appendChild(toast);
 
     }
-    refreshMaps();
 }
 
 function saveMap() {
@@ -55,7 +58,11 @@ function saveMap() {
     }));
 }
 
-function refreshMaps() {
+export function refreshMaps() {
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
 
     ws.send(JSON.stringify({
 
