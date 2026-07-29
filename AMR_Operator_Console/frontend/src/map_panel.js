@@ -1,17 +1,17 @@
-let ws = null;
+// Sends through ws_client rather than a captured socket, which would be the
+// stale pre-drop one after a reconnect.
+import { sendMessage } from "./ws_client.js";
+import { showToast } from "./toast.js";
 
 let mapListContainer = null;
 let mapNameInput = null;
 let modeIndicator = null;
-let toast = null;
 
 // Binds the panel's DOM once. Deliberately does NOT pull the map list -- the
 // socket is not necessarily open yet at bind time, and re-binding on every
 // (re)connect would stack duplicate click listeners on Save/Refresh. ws_client
 // calls refreshMaps() on open instead.
-export function initMapPanel(socket) {
-
-    ws = socket || window.wsClient;
+export function initMapPanel() {
 
     mapListContainer = document.getElementById("map-list");
     mapNameInput = document.getElementById("map-name");
@@ -24,18 +24,6 @@ export function initMapPanel(socket) {
     document
         .getElementById("refresh-map-btn")
         .addEventListener("click", refreshMaps);
-
-    toast = document.getElementById("toast");
-
-    if (!toast) {
-
-        toast = document.createElement("div");
-
-        toast.id = "toast";
-
-        document.body.appendChild(toast);
-
-    }
 }
 
 function saveMap() {
@@ -44,31 +32,30 @@ function saveMap() {
 
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
 
-        alert("Invalid map name");
+        showToast(
+            "Map name must be letters, numbers, dashes or underscores",
+            false,
+        );
 
         return;
     }
 
-    ws.send(JSON.stringify({
+    sendMessage({
 
         type: "map_save",
 
         name: name,
 
-    }));
+    });
 }
 
 export function refreshMaps() {
 
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return;
-    }
-
-    ws.send(JSON.stringify({
+    sendMessage({
 
         type: "map_list"
 
-    }));
+    });
 }
 
 export function handleMapFrame(frame) {
@@ -101,8 +88,9 @@ export function handleMapFrame(frame) {
 
         case "slam_mode":
 
-            modeIndicator.innerText =
-                "Mode : " + frame.mode;
+            modeIndicator.textContent = frame.mode;
+
+            modeIndicator.dataset.mode = frame.mode;
 
             break;
 
@@ -114,29 +102,44 @@ function drawMapList(maps){
 
     mapListContainer.innerHTML = "";
 
+    if (maps.length === 0) {
+
+        const empty = document.createElement("p");
+
+        empty.className = "empty-hint";
+        empty.textContent = "No saved maps yet.";
+
+        mapListContainer.appendChild(empty);
+
+        return;
+
+    }
+
     maps.forEach(name=>{
 
         const row = document.createElement("div");
 
-        row.className = "map-item";
+        row.className = "list-row";
 
         const label = document.createElement("span");
 
-        label.innerText = name;
+        label.className = "list-label";
+        label.textContent = name;
 
         const btn = document.createElement("button");
 
-        btn.innerText = "Load";
+        btn.className = "btn btn-small";
+        btn.textContent = "Load";
 
         btn.onclick = ()=>{
 
-            ws.send(JSON.stringify({
+            sendMessage({
 
                 type:"map_load",
 
                 name:name
 
-            }));
+            });
 
         };
 
@@ -147,23 +150,5 @@ function drawMapList(maps){
         mapListContainer.appendChild(row);
 
     });
-
-}
-
-function showToast(message, success) {
-
-    toast.innerText = message;
-
-    toast.className = success
-        ? "toast-success"
-        : "toast-error";
-
-    toast.style.display = "block";
-
-    setTimeout(() => {
-
-        toast.style.display = "none";
-
-    }, 2500);
 
 }

@@ -1,19 +1,550 @@
+/* AMR Operator Console.
+ *
+ * Committed to a dark theme rather than following the OS: this runs next to a
+ * dark occupancy map, often on a tablet on the shop floor, and a light chrome
+ * around a near-black canvas is hard to read under warehouse lighting.
+ *
+ * Colour roles are fixed across the console so the map legend means something:
+ * cyan = Nav2's plan, orange = the operator's path, red = keep-out, green =
+ * goal. Nothing else may use those hues.
+ */
+
+:root {
+  --bg: #0b1017;
+  --surface: #131a24;
+  --surface-raised: #1b2431;
+  --border: #263141;
+  --border-strong: #35435a;
+
+  --text: #e6edf6;
+  --text-dim: #93a2b8;
+  --text-faint: #64748b;
+
+  --accent: #38bdf8;
+  --accent-strong: #0ea5e9;
+
+  --goal: #4ade80;
+  --path: #fb923c;
+  --zone: #ef4444;
+
+  --danger: #f87171;
+  --danger-bg: #3b1418;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --tap: 44px;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-  font-family: sans-serif;
-  margin: 1rem;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2 {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* ---- top bar ---------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  padding: 0.75rem 1.25rem;
+
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.brand h1 {
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.brand-mark {
+  width: 10px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  padding: 0.3rem 0.7rem;
+
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.chip strong {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+
+  padding: 0.3rem 0.75rem 0.3rem 0.6rem;
+
+  font-size: 0.8rem;
+  font-weight: 600;
+
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+#connection-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+#connection-pill[data-state="online"] {
+  color: var(--goal);
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+#connection-pill[data-state="online"]::before {
+  background: var(--goal);
+}
+
+#connection-pill[data-state="offline"] {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+#connection-pill[data-state="offline"]::before {
+  background: var(--danger);
+}
+
+#connection-pill[data-state="connecting"] {
+  color: var(--text-dim);
+}
+
+#connection-pill[data-state="connecting"]::before {
+  background: var(--text-dim);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.25; }
+}
+
+/* ---- layout ----------------------------------------------------------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 1rem;
+
+  padding: 1rem;
+  align-items: start;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+.card h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+
+  margin-bottom: 0.85rem;
+}
+
+.help {
+  margin: 0 0 0.85rem;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.badge {
+  padding: 0.15rem 0.5rem;
+
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+/* ---- map -------------------------------------------------------------- */
+
+.map-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mode-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  min-height: 1.2em;
+}
+
+.canvas-wrap {
+  /* The renderer sets aspect-ratio here from the incoming map, and the canvas
+     fills this box exactly. Doing it this way round means the element's CSS
+     size never depends on the backing-store size the renderer is about to
+     compute from it -- otherwise sizing one would relayout the other. */
+  aspect-ratio: 1 / 1;
+  width: 100%;
+
+  /* Keeps a big map from filling the whole viewport. Bounding the width (via
+     the aspect ratio the renderer sets) rather than the height preserves the
+     box shape the canvas fills. */
+  max-width: calc(68vh * var(--map-aspect, 1));
+  margin: 0 auto;
+
+  background:
+    linear-gradient(rgba(56, 189, 248, 0.05), rgba(56, 189, 248, 0.05)),
+    #070a0f;
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 #map-canvas {
-  border: 1px solid #444;
-  background: #111;
+  display: block;
+
+  /* Fill the card: at grid resolution a 400-cell map is a postage stamp on a
+     desktop, and the operator is drawing on it with a finger. */
+  width: 100%;
+  height: 100%;
+
+  /* Stops the browser panning/zooming the page out from under a drag. */
+  touch-action: none;
 }
 
-#status-panel,
-#battery-panel {
-  margin-top: 1rem;
+.swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
 }
+
+.swatch-goal { background: var(--goal); }
+.swatch-path { background: var(--path); }
+.swatch-zone { background: var(--zone); }
+
+/* ---- draw controls ---------------------------------------------------- */
+
+.draw-controls {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  padding: 0.85rem;
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.draw-controls.visible {
+  display: flex;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.slider-row label {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--path);
+  height: var(--tap);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  color: var(--text);
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ---- controls --------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+
+  min-height: var(--tap);
+  padding: 0.5rem 0.95rem;
+
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.btn:hover {
+  background: #222d3d;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-small {
+  min-height: 36px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.btn-primary {
+  background: var(--accent-strong);
+  border-color: var(--accent);
+  color: #04121c;
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: #38bdf8;
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: var(--danger-bg);
+}
+
+.btn-danger:hover {
+  background: #4a1a1f;
+}
+
+/* An armed tool is the single most important piece of state on this screen:
+   it changes what a tap on the map does. */
+.btn-tool.active {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
+input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+
+  padding: 0.45rem 0.7rem;
+
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+input[type="text"]::placeholder {
+  color: var(--text-faint);
+}
+
+input[type="text"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.field-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+/* ---- lists ------------------------------------------------------------ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  padding: 0.4rem 0.6rem;
+
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.list-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.list-meta {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.empty-hint {
+  margin: 0;
+  padding: 0.6rem;
+
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  text-align: center;
+
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- status readouts -------------------------------------------------- */
+
+.status-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.status-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.status-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.readout:not(:empty) {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* ---- teleop ----------------------------------------------------------- */
+
 #teleop-pad {
-  margin-top: 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -28,131 +559,95 @@ body {
   gap: 0.5rem;
 }
 
-#teleop-pad button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-}
-#goal-toggle {
-
-  margin-bottom: 10px;
-
-  padding: 8px 16px;
-
-  cursor: pointer;
-
+.btn-pad {
+  min-width: 64px;
+  min-height: 52px;
+  font-size: 1rem;
 }
 
-#goal-toggle.active {
-
-  background: green;
-
-  color: white;
-
-}
-#toast{
-
-    position: fixed;
-
-    bottom: 25px;
-
-    right: 25px;
-
-    color: white;
-
-    padding: 12px 20px;
-
-    border-radius: 6px;
-
-    display: none;
-
-    font-weight: bold;
-
-    z-index: 9999;
-
-}
-
-.toast-success{
-
-    background: #2e7d32;
-
-}
-
-.toast-error{
-
-    background: #c62828;
-
-}
-#draw-controls{
-
-    margin-top:15px;
-
-    display:none;
-
-    padding:10px;
-
-    border:1px solid #aaa;
-
-    border-radius:6px;
-
-}
-
-#draw-controls button{
-
-    margin:5px;
-
-}
-
-#epsilon-slider{
-
-    width:180px;
-
-}
-
-#path-status{
-
-    margin-top:10px;
-
-    font-weight:bold;
-
-}
-
-#path-status.path-status-error{
-
-    color:#c62828;
-
-}
-
-#draw-toggle.active{
-
-    background: green;
-
-    color: white;
-
-}
-.path-item {
-    margin: 5px;
-}
-
-.path-item button {
-    margin-left: 5px;
-}
+/* ---- toast ------------------------------------------------------------ */
 
 #toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 10px;
-    display: none;
+  position: fixed;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  right: 1.25rem;
+  z-index: 9999;
+
+  max-width: min(28rem, calc(100vw - 2.5rem));
+  padding: 0.7rem 1rem;
+
+  font-size: 0.88rem;
+  font-weight: 500;
+
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  visibility: hidden;
+
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+}
+
+#toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 .toast-success {
-    background: green;
-    color:white;
+  background: #14532d;
+  color: #dcfce7;
+  border: 1px solid #22c55e;
 }
 
 .toast-error {
-    background:red;
-    color:white;
+  background: var(--danger-bg);
+  color: #fee2e2;
+  border: 1px solid var(--danger);
+}
+
+/* ---- responsive ------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    /* Two columns of panels below the map reads better than one long
+       column on a landscape tablet. */
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    align-items: start;
+  }
+
+}
+
+@media (max-width: 600px) {
+
+  .layout {
+    padding: 0.6rem;
+    gap: 0.6rem;
+  }
+
+  .topbar {
+    padding: 0.6rem 0.85rem;
+  }
+
+  .toolbar .btn {
+    flex: 1 1 auto;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
 }

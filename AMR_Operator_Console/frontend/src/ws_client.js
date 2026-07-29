@@ -17,25 +17,38 @@ import {
 } from "./map_panel.js";
 import {
     initPathPanel,
+    handlePathFrame,
     refreshPaths,
     renderPathStatus,
 } from "./path_panel.js";
 import {
-    renderMap,
-    setGoalMode,
-    updatePlan,
-} from "./map_renderer.js";
+    initZonePanel,
+    handleZoneFrame,
+    refreshZones,
+} from "./zone_panel.js";
+import { initZoneDraw } from "./zone_draw.js";
+import { initModeToolbar } from "./mode_toolbar.js";
+import { renderMap, updatePlan } from "./map_renderer.js";
 
 
 const WS_URL = 'ws://localhost:8765';
+
+// Backing off avoids hammering a robot that is still booting, while staying
+// responsive to a gateway that only blipped.
+const RECONNECT_MIN_MS = 1000;
+const RECONNECT_MAX_MS = 10000;
+
+export let websocket = null;
+
+let reconnectDelayMs = RECONNECT_MIN_MS;
+
+let reconnectTimer = null;
 
 export function connect(onMessage) {
   const socket = new WebSocket(WS_URL);
   socket.onmessage = (event) => onMessage(JSON.parse(event.data));
   return socket;
 }
-
-export let websocket = null;
 
 export function sendMessage(message)
 {
@@ -55,6 +68,20 @@ export function sendMessage(message)
     websocket.send(
         JSON.stringify(message)
     );
+
+}
+
+
+function setConnectionState(state, label) {
+
+    const pill = document.getElementById("connection-pill");
+
+    if (!pill) {
+        return;
+    }
+
+    pill.dataset.state = state;
+    pill.textContent = label;
 
 }
 
@@ -97,7 +124,14 @@ function handleTelemetryFrame(data) {
         case "path_data":
         case "path_op_result":
 
-            window.pathPanelHandler(data);
+            handlePathFrame(data);
+
+            break;
+
+        case "zone_list":
+        case "zone_op_result":
+
+            handleZoneFrame(data);
 
             break;
 
@@ -105,48 +139,89 @@ function handleTelemetryFrame(data) {
 
 }
 
-websocket = connect(handleTelemetryFrame);
 
-initTeleop(websocket);
+function openSocket() {
+
+    setConnectionState("connecting", "Connecting");
+
+    websocket = connect(handleTelemetryFrame);
+
+    window.wsClient = websocket;
+
+    websocket.onopen = () => {
+
+        console.log("Connected to AMR websocket");
+
+        setConnectionState("online", "Connected");
+
+        reconnectDelayMs = RECONNECT_MIN_MS;
+
+        // Only the list pulls belong here -- they need an open socket, and
+        // they are repeated on every reconnect so a console that was offline
+        // while zones or maps changed does not keep showing stale ones.
+        refreshMaps();
+        refreshPaths();
+        refreshZones();
+
+    };
+
+    websocket.onclose = () => {
+
+        setConnectionState("offline", "Disconnected");
+
+        scheduleReconnect();
+
+    };
+
+    websocket.onerror = () => {
+
+        // onerror is always followed by onclose, which owns the retry.
+        setConnectionState("offline", "Disconnected");
+
+    };
+
+}
+
+
+function scheduleReconnect() {
+
+    if (reconnectTimer) {
+        return;
+    }
+
+    reconnectTimer = setTimeout(() => {
+
+        reconnectTimer = null;
+
+        openSocket();
+
+    }, reconnectDelayMs);
+
+    reconnectDelayMs = Math.min(
+        reconnectDelayMs * 2,
+        RECONNECT_MAX_MS,
+    );
+
+}
+
+
+// Bind panel DOM once, not per connection. Re-binding on every open would
+// stack duplicate listeners -- which is exactly what reconnecting now does.
+initTeleop();
 
 initTeleopButtons(
     document.getElementById("teleop-pad")
 );
 
-window.wsClient = websocket;
-
-// Bind panel DOM once, not per connection. Re-binding on every open would
-// stack duplicate listeners the moment a reconnect is added.
-initMapPanel(websocket);
+initMapPanel();
 initPathPanel();
 initPathDraw();
+initZonePanel();
+initZoneDraw();
+initModeToolbar();
 
+openSocket();
 
-websocket.onopen = () => {
-
-    console.log("Connected to AMR websocket");
-
-    // Only the list pulls belong here -- they need an open socket, and they
-    // are safe to repeat if a reconnect is ever added.
-    refreshMaps();
-    refreshPaths();
-
-};
-
-
-
-const goalButton =
-    document.getElementById("goal-toggle");
-
-goalButton.addEventListener("click", () => {
-
-    goalButton.classList.toggle("active");
-
-    setGoalMode(
-        goalButton.classList.contains("active")
-    );
-
-});
 
 const sendPathButton =
     document.getElementById("send-path-btn");

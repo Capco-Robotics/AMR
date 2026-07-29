@@ -1,3 +1,8 @@
+// Goes through ws_client's sendMessage rather than holding a socket: the
+// client reconnects, and a captured socket would be the dead one from before
+// the drop -- teleop would look bound but silently stop driving.
+import { sendMessage } from "./ws_client.js";
+
 const DRIVE_LINEAR_SPEED = 0.4;
 const DRIVE_ANGULAR_SPEED = 1.0;
 
@@ -30,20 +35,16 @@ function _computeDriveFrame(keys) {
     };
 }
 
-function _sendFrame(socket, keys) {
+function _sendFrame(keys) {
 
-    if (socket.readyState !== WebSocket.OPEN) {
-        return;
-    }
-
-    const frame = _computeDriveFrame(keys);
-
-    socket.send(
-        JSON.stringify(frame)
+    sendMessage(
+        _computeDriveFrame(keys)
     );
 }
 
-export function initTeleop(socket) {
+// Binds document-level listeners and starts the send loop. Call once: a
+// second call would stack a duplicate interval and duplicate key handlers.
+export function initTeleop() {
 
 
     document.addEventListener("keydown", (event) => {
@@ -72,7 +73,7 @@ export function initTeleop(socket) {
 
     setInterval(() => {
 
-        _sendFrame(socket, _active);
+        _sendFrame(_active);
 
     }, 100);
 }

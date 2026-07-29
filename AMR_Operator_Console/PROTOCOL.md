@@ -206,6 +206,49 @@ Path points are `[x, y, theta]` arrays throughout. A path must have between
 
 ---
 
+## Keep-out zones *(implemented)*
+
+A zone is a closed polygon in map-frame metres that the AMR will not enter.
+Names follow the same character class as maps and paths.
+
+| Console sends | Gateway replies |
+|---|---|
+| `{"type": "zone_save", "name": "...", "polygon": [[x, y], ...]}` | `zone_op_result` + `zone_list` |
+| `{"type": "zone_delete", "name": "..."}` | `zone_op_result` + `zone_list` |
+| `{"type": "zone_clear"}` | `zone_op_result` + `zone_list` |
+| `{"type": "zone_list"}` | `zone_list` |
+
+```json
+{"type": "zone_list", "zones": [{"name": "dock", "polygon": [[1.0, 2.0]]}]}
+{"type": "zone_op_result", "ok": true, "error": ""}
+```
+
+Polygon vertices are `[x, y]` (no heading — a zone is an area, not a pose).
+A polygon needs 3 to 200 vertices, at most 50 zones are stored, and the
+closing edge is implicit: do not repeat the first vertex.
+
+Zones are enforced in two independent places, because each catches what the
+other cannot:
+
+- **Nav2.** The gateway rasterises every zone into an `OccupancyGrid` filter
+  mask on `/keepout_filter_mask` and publishes a `CostmapFilterInfo` on
+  `/costmap_filter_info`, both latched. Both costmaps consume them through
+  `nav2_costmap_2d::KeepoutFilter`, so the planner routes around zones and
+  the controller refuses to drive into one. The mask is grown by the
+  footprint's inscribed radius (`zone_margin`, default 0.4 m) because costmap
+  filters run after the inflation layer and would otherwise let the robot's
+  body clip a corner.
+- **The gateway.** A `nav_path` whose segments enter a zone is refused before
+  it reaches Nav2, with `{"type": "path_status", "state": "rejected",
+  "zones": [...]}`. `NavigateThroughPoses` treats path points as goal poses,
+  and one dropped inside a zone is unreachable, so without this the run is
+  accepted and then aborts partway.
+
+The mask is aligned to the geometry of the latest `/map`, and is republished
+whenever the map's size, resolution or origin changes.
+
+---
+
 ## Validation Rules
 
 ### Today *(implemented)*

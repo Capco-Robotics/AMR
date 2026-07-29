@@ -1,4 +1,5 @@
 import { sendMessage } from "./ws_client.js";
+import { showToast } from "./toast.js";
 import {
     loadPath,
     getCleanPath
@@ -6,7 +7,6 @@ import {
 let pathList = null;
 let pathName = null;
 let pathStatus = null;
-let toast = null;
 
 let loadedPaths = {};
 
@@ -28,18 +28,6 @@ export function initPathPanel() {
 
     if (stopButton) {
         stopButton.addEventListener("click", cancelPath);
-    }
-
-
-    toast = document.getElementById("toast");
-
-    if (!toast) {
-
-        toast = document.createElement("div");
-        toast.id = "toast";
-
-        document.body.appendChild(toast);
-
     }
 
 }
@@ -143,16 +131,16 @@ export function renderPathStatus(frame){
     }
 
 
-    pathStatus.innerText =
+    pathStatus.textContent =
         detail.length
-            ? `Path Status : ${label} (${detail.join(", ")})`
-            : `Path Status : ${label}`;
+            ? `${label} — ${detail.join(", ")}`
+            : label;
 
 
     pathStatus.className =
         PATH_STATE_FAILED.includes(frame.state)
-            ? "path-status-error"
-            : "";
+            ? "status-value status-error"
+            : "status-value";
 
 }
 
@@ -163,23 +151,39 @@ function drawPathList(paths){
     pathList.innerHTML="";
 
 
+    if(paths.length === 0){
+
+        const empty = document.createElement("p");
+
+        empty.className = "empty-hint";
+        empty.textContent = "No saved paths yet.";
+
+        pathList.appendChild(empty);
+
+        return;
+
+    }
+
+
     paths.forEach(name=>{
 
 
         const row=document.createElement("div");
 
-        row.className="path-item";
+        row.className="list-row";
 
 
         const label=document.createElement("span");
 
-        label.innerText=name;
+        label.className="list-label";
+        label.textContent=name;
 
 
 
         const loadBtn=document.createElement("button");
 
-        loadBtn.innerText="Load";
+        loadBtn.className="btn btn-small";
+        loadBtn.textContent="Load";
 
         loadBtn.onclick=()=>{
 
@@ -197,7 +201,8 @@ function drawPathList(paths){
 
         const runBtn=document.createElement("button");
 
-        runBtn.innerText="Run";
+        runBtn.className="btn btn-primary btn-small";
+        runBtn.textContent="Run";
 
         runBtn.onclick=()=>{
 
@@ -209,7 +214,8 @@ function drawPathList(paths){
 
         const deleteBtn=document.createElement("button");
 
-        deleteBtn.innerText="Delete";
+        deleteBtn.className="btn btn-danger btn-small";
+        deleteBtn.textContent="Delete";
 
         deleteBtn.onclick=()=>{
 
@@ -278,7 +284,7 @@ function getCurrentPath(){
 }
 
 
-function handleFrame(frame){
+export function handlePathFrame(frame){
 
 
     switch(frame.type){
@@ -336,31 +342,3 @@ function handleFrame(frame){
     }
 
 }
-
-
-
-function showToast(message,success){
-
-    toast.innerText=message;
-
-
-    toast.className =
-        success ?
-        "toast-success":
-        "toast-error";
-
-
-    toast.style.display="block";
-
-
-    setTimeout(()=>{
-
-        toast.style.display="none";
-
-    },2500);
-
-}
-
-
-
-window.pathPanelHandler = handleFrame;

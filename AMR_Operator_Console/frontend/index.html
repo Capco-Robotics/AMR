@@ -2,133 +2,262 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AMR Operator Console</title>
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
-  <h1>AMR Operator Console</h1>
-  <button id="goal-toggle">
-    Set Goal
-  </button>
-  <button id="draw-toggle">
-    Draw Path
-</button>
 
-<div id="draw-controls">
+  <header class="topbar">
 
-    <label>
-        ε :
-        <input
-            id="epsilon-slider"
-            type="range"
-            min="0.02"
-            max="0.40"
-            step="0.01"
-            value="0.10">
-    </label>
-
-    <span id="epsilon-value">
-        0.10 m
-    </span>
-
-    <br>
-
-    <button id="send-path-btn">
-        Send Path
-    </button>
-
-    <button id="stop-path-btn">
-        Stop
-    </button>
-
-    <button id="redraw-path-btn">
-        Redraw
-    </button>
-
-    <button id="clear-path-btn">
-        Clear
-    </button>
-
-</div>
-
-<div id="path-status">
-
-    Path Status :
-    Idle
-
-</div>
-  <canvas id="map-canvas" width="600" height="600"></canvas>
-  <div id="status-panel"></div>
-  <div id="battery-panel"></div>
-  <div id="teleop-pad">
-    <button data-key="w">Forward</button>
-
-    <div class="teleop-middle">
-      <button data-key="a">Left</button>
-      <button data-key="d">Right</button>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>AMR Operator Console</h1>
     </div>
 
-    <button data-key="s">Backward</button>
+    <div class="topbar-status">
+
+      <span class="chip">
+        SLAM
+        <strong id="slam-mode" data-mode="Unknown">Unknown</strong>
+      </span>
+
+      <span id="connection-pill" data-state="connecting">Connecting</span>
+
     </div>
 
-  <div id="map-panel">
+  </header>
 
-  <h3>Map Manager</h3>
+  <main class="layout">
 
-  <div id="slam-mode">
-    Mode : Unknown
-  </div>
+    <section class="map-area">
 
-  <input
-      id="map-name"
-      type="text"
-      placeholder="Map name"
-  >
+      <div class="card map-card">
 
-  <button id="save-map-btn">
-      Save Map
-  </button>
+        <div class="toolbar" role="toolbar" aria-label="Map tools">
 
-  <button id="refresh-map-btn">
-      Refresh
-  </button>
+          <button id="goal-toggle" class="btn btn-tool" type="button">
+            <span class="swatch swatch-goal" aria-hidden="true"></span>
+            Set Goal
+          </button>
 
-  <hr>
+          <button id="draw-toggle" class="btn btn-tool" type="button">
+            <span class="swatch swatch-path" aria-hidden="true"></span>
+            Draw Path
+          </button>
 
-  <div id="map-list"></div>
+          <button id="zone-toggle" class="btn btn-tool" type="button">
+            <span class="swatch swatch-zone" aria-hidden="true"></span>
+            Draw Keep-out Zone
+          </button>
 
-</div>
+        </div>
 
-<div id="path-panel">
+        <p id="mode-hint" class="mode-hint">Pick a tool to interact with the map.</p>
 
-  <h3>Path Manager</h3>
+        <div class="canvas-wrap">
+          <canvas id="map-canvas" width="600" height="600"></canvas>
+        </div>
 
-  <input
-      id="path-name"
-      type="text"
-      placeholder="Path name"
-  >
+        <div id="draw-controls" class="draw-controls">
 
-  <button id="save-path-btn">
-      Save Path
-  </button>
+          <div class="slider-row">
 
-  <button id="refresh-path-btn">
-      Refresh
-  </button>
+            <label for="epsilon-slider">Path detail</label>
 
-  <hr>
+            <input
+                id="epsilon-slider"
+                type="range"
+                min="0.02"
+                max="0.40"
+                step="0.01"
+                value="0.10">
 
-  <div id="path-list"></div>
+            <output id="epsilon-value" class="mono">0.10 m</output>
 
-</div>
+          </div>
 
+          <div class="button-row">
+
+            <button id="send-path-btn" class="btn btn-primary" type="button">
+              Send Path
+            </button>
+
+            <button id="stop-path-btn" class="btn btn-danger" type="button">
+              Stop
+            </button>
+
+            <button id="redraw-path-btn" class="btn" type="button">
+              Redraw
+            </button>
+
+            <button id="clear-path-btn" class="btn" type="button">
+              Clear
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <aside class="sidebar">
+
+      <section class="card">
+
+        <h2>Path Execution</h2>
+
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span id="path-status" class="status-value">Idle</span>
+        </div>
+
+        <div id="status-panel" class="readout"></div>
+        <div id="battery-panel" class="readout"></div>
+
+      </section>
+
+      <section class="card" id="zone-panel">
+
+        <h2>
+          Keep-out Zones
+          <span id="zone-count" class="badge">0 zones</span>
+        </h2>
+
+        <p class="help">
+          Areas the AMR will not enter. Trace one with the
+          <strong>Draw Keep-out Zone</strong> tool, then name and save it.
+        </p>
+
+        <div class="field-row">
+
+          <input
+              id="zone-name"
+              type="text"
+              placeholder="Zone name"
+              autocomplete="off"
+          >
+
+          <button id="save-zone-btn" class="btn btn-primary" type="button">
+            Save Zone
+          </button>
+
+        </div>
+
+        <div class="button-row">
+
+          <button id="discard-zone-btn" class="btn btn-small" type="button">
+            Discard Trace
+          </button>
+
+          <button id="refresh-zones-btn" class="btn btn-small" type="button">
+            Refresh
+          </button>
+
+          <button id="clear-zones-btn" class="btn btn-danger btn-small" type="button">
+            Delete All
+          </button>
+
+        </div>
+
+        <div id="zone-list" class="list"></div>
+
+      </section>
+
+      <section class="card" id="map-panel">
+
+        <h2>Map Manager</h2>
+
+        <div class="field-row">
+
+          <input
+              id="map-name"
+              type="text"
+              placeholder="Map name"
+              autocomplete="off"
+          >
+
+          <button id="save-map-btn" class="btn btn-primary" type="button">
+            Save Map
+          </button>
+
+        </div>
+
+        <div class="button-row">
+
+          <button id="refresh-map-btn" class="btn btn-small" type="button">
+            Refresh
+          </button>
+
+        </div>
+
+        <div id="map-list" class="list"></div>
+
+      </section>
+
+      <section class="card" id="path-panel">
+
+        <h2>Path Manager</h2>
+
+        <div class="field-row">
+
+          <input
+              id="path-name"
+              type="text"
+              placeholder="Path name"
+              autocomplete="off"
+          >
+
+          <button id="save-path-btn" class="btn btn-primary" type="button">
+            Save Path
+          </button>
+
+        </div>
+
+        <div class="button-row">
+
+          <button id="refresh-path-btn" class="btn btn-small" type="button">
+            Refresh
+          </button>
+
+        </div>
+
+        <div id="path-list" class="list"></div>
+
+      </section>
+
+      <section class="card">
+
+        <h2>Manual Drive</h2>
+
+        <p class="help">Hold a button, or use W / A / S / D.</p>
+
+        <div id="teleop-pad">
+
+          <button data-key="w" class="btn btn-pad" type="button">&#9650;</button>
+
+          <div class="teleop-middle">
+            <button data-key="a" class="btn btn-pad" type="button">&#9664;</button>
+            <button data-key="d" class="btn btn-pad" type="button">&#9654;</button>
+          </div>
+
+          <button data-key="s" class="btn btn-pad" type="button">&#9660;</button>
+
+        </div>
+
+      </section>
+
+    </aside>
+
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Single entry point: ws_client imports every panel and the renderer, so
+       loading them separately only risked double-binding. -->
   <script type="module" src="src/ws_client.js"></script>
-  <script type="module" src="src/map_renderer.js"></script>
-  <script type="module" src="src/status_panel.js"></script>
-  <script type="module" src="src/battery_panel.js"></script>
-  <script type="module" src="src/map_panel.js"></script>
-  <script type="module" src="src/path_draw.js"></script>
-  <script type="module" src="src/path_panel.js"></script>
+
 </body>
 </html>

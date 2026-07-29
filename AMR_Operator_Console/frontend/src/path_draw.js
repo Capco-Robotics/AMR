@@ -14,9 +14,12 @@
 import "./vendor/simplify.js";
 
 import {
+    MODE_PATH,
     canvasToWorld,
-    setDrawMode,
+    isMode,
+    onModeChange,
     setDrawStroke,
+    setInteractionMode,
 } from "./map_renderer.js";
 
 // Raw pointer samples and the thinned result, both as [x, y, theta] world
@@ -104,49 +107,32 @@ export function initPathDraw() {
 
     const canvas = document.getElementById("map-canvas");
 
-    const drawToggle = document.getElementById("draw-toggle");
-
     epsilonSlider = document.getElementById("epsilon-slider");
 
     const epsilonValue = document.getElementById("epsilon-value");
 
-    // #draw-controls is display:none in the stylesheet and nothing ever
-    // unhid it, so Send Path / Redraw / Clear / Stop and the epsilon slider
-    // were unreachable in the browser. The draw toggle owns their visibility.
+    // #draw-controls is hidden by default: Send Path / Redraw / Clear / Stop
+    // and the epsilon slider only mean anything while the path tool is live.
     const drawControls = document.getElementById("draw-controls");
 
-    if (!canvas || !drawToggle) {
+    if (!canvas) {
         return;
     }
 
-    function drawModeActive() {
-        return drawToggle.classList.contains("active");
-    }
-
-    function syncDrawControls() {
+    // The toolbar owns which tool is selected; this just follows it, so a
+    // mode change from anywhere (Redraw, or arming the zone tool) leaves the
+    // controls in the right state.
+    onModeChange((mode) => {
 
         if (drawControls) {
-            drawControls.style.display =
-                drawModeActive() ? "block" : "none";
+            drawControls.classList.toggle("visible", mode === MODE_PATH);
         }
 
-    }
-
-    drawToggle.addEventListener("click", () => {
-
-        drawToggle.classList.toggle("active");
-
-        setDrawMode(drawModeActive());
-
-        syncDrawControls();
-
-        if (!drawModeActive()) {
+        if (mode !== MODE_PATH) {
             drawing = false;
         }
 
     });
-
-    syncDrawControls();
 
     if (epsilonSlider && epsilonValue) {
 
@@ -175,7 +161,7 @@ export function initPathDraw() {
     // Pointer events (not mouse events) so a stylus or touch drag works too.
     canvas.addEventListener("pointerdown", (event) => {
 
-        if (!drawModeActive()) {
+        if (!isMode(MODE_PATH)) {
             return;
         }
 
@@ -246,10 +232,7 @@ export function initPathDraw() {
 
             clear();
 
-            if (!drawModeActive()) {
-                drawToggle.classList.add("active");
-                setDrawMode(true);
-            }
+            setInteractionMode(MODE_PATH);
 
         });
 
