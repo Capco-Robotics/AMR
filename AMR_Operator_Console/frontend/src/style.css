@@ -34,3 +34,53 @@ body {
   padding: 0.5rem 1rem;
   cursor: pointer;
 }
+#goal-toggle {
+
+  margin-bottom: 10px;
+
+  padding: 8px 16px;
+
+  cursor: pointer;
+
+}
+
+#goal-toggle.active {
+
+  background: green;
+
+  color: white;
+
+}
+#toast{
+
+    position: fixed;
+
+    bottom: 25px;
+
+    right: 25px;
+
+    color: white;
+
+    padding: 12px 20px;
+
+    border-radius: 6px;
+
+    display: none;
+
+    font-weight: bold;
+
+    z-index: 9999;
+
+}
+
+.toast-success{
+
+    background: #2e7d32;
+
+}
+
+.toast-error{
+
+    background: #c62828;
+
+}
