@@ -3,13 +3,13 @@ Arbitrates commands from the remote operator console (and future input
 sources, e.g. a joystick), forwards validated decisions to amr_engine, and
 streams live telemetry (map, battery, lift/fault status) out over a websocket.
 """
+
 import asyncio
 import threading
 import math
 import time
 import os
 import re
-import json
 
 
 import rclpy
@@ -74,15 +74,6 @@ class CommandGatewayNode(Node):
         ).value
 
         self.declare_parameter(
-           "paths_directory",
-           "paths",
-)
-
-        self.paths_directory = self.get_parameter(
-           "paths_directory"
-        ).value
-
-        self.declare_parameter(
             "slam_mode",
             "mapping",
         )
@@ -95,10 +86,6 @@ class CommandGatewayNode(Node):
             self.maps_directory,
             exist_ok=True,
         )
-        os.makedirs(
-            self.paths_directory,
-            exist_ok=True,
-)
 
         threading.Thread(
             target=self._run_ws,
@@ -200,7 +187,7 @@ class CommandGatewayNode(Node):
 
 
     def _on_ws_frame(self, data):
-       try:
+        try:
 
             frame_type = data.get("type")
 
@@ -250,44 +237,6 @@ class CommandGatewayNode(Node):
                     f"Goal published ({x:.2f}, {y:.2f})"
                 )
 
-
-            elif frame_type == "nav_path":
-
-                points = data.get("points", [])
-
-                if not isinstance(points, list):
-
-                    self.get_logger().warning(
-                        "Rejected invalid path"
-                    )
-
-                    return
-
-
-                for p in points:
-
-                    if (
-                        not isinstance(p, list)
-                        or len(p) != 3
-                        or not all(
-                            isinstance(v, (int, float))
-                            and math.isfinite(v)
-                            for v in p
-                        )
-                    ):
-
-                        self.get_logger().warning(
-                            "Rejected invalid path points"
-                        )
-
-                        return
-
-
-                self.get_logger().info(
-                    f"Received nav_path with {len(points)} points"
-                )
-
-
             elif frame_type == "map_save":
 
                 map_name = self._sanitize_map_name(
@@ -329,100 +278,66 @@ class CommandGatewayNode(Node):
                     return
 
                 self._load_map(map_name)
-  
+
             elif frame_type == "map_list":
 
                 self._send_map_list()
-            elif frame_type == "path_save":
 
-                path_name = self._sanitize_map_name(
-                    data.get("name", "")
+        except Exception as e:
+            self.get_logger().error(str(e))
+
+    def _odom_callback(self, msg):
+        pose = msg.pose.pose
+        self.get_logger().info(
+            f"Received odom: x={pose.position.x:.2f}, y={pose.position.y:.2f}"
+        )
+
+        q = pose.orientation
+
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+
+        self._latest_pose = {
+            "x": pose.position.x,
+            "y": pose.position.y,
+            "yaw": yaw,
+        }
+
+    def _map_callback(self, msg):
+        self.get_logger().info("MAP RECEIVED")
+        
+        try:
+            frame = encode_occupancy_grid(msg)
+            frame["type"] = "map"
+            frame["pose"] = self._latest_pose
+
+            if self.websocket_server.loop:
+                asyncio.run_coroutine_threadsafe(
+                    self.websocket_server.broadcast(frame),
+                    self.websocket_server.loop,
                 )
 
-                if path_name is None:
-
-                    asyncio.run_coroutine_threadsafe(
-                        self.websocket_server.broadcast({
-                            "type": "path_op_result",
-                            "ok": False,
-                            "error": "Invalid path name",
-                        }),
-                        self.websocket_server.loop,
-                    )
-
-                    return
-
-                self._save_path(
-                    path_name,
-                    data.get("points", []),
-                )
-
-            elif frame_type == "path_load":
-
-                path_name = self._sanitize_map_name(
-                    data.get("name", "")
-                )
-
-                if path_name is None:
-
-                    asyncio.run_coroutine_threadsafe(
-                        self.websocket_server.broadcast({
-                            "type": "path_op_result",
-                            "ok": False,
-                            "error": "Invalid path name",
-                        }),
-                        self.websocket_server.loop,
-                    )
-
-                    return
-
-                self._load_path(path_name)
-
-            elif frame_type == "path_list":
-
-                 self._send_path_list()
-
-            elif frame_type == "path_delete":
-
-                path_name = self._sanitize_map_name(
-                    data.get("name", "")
-                )
-
-                if path_name is None:
-
-                    asyncio.run_coroutine_threadsafe(
-                        self.websocket_server.broadcast({
-                            "type": "path_op_result",
-                            "ok": False,
-                            "error": "Invalid path name",
-                        }),
-                        self.websocket_server.loop,
-                    )
-
-                    return
-
-                self._delete_path(path_name)
-
-
-       except Exception as e:
-         self.get_logger().error(f"Map broadcast failed: {e}")
-     
+        except Exception as e:
+            self.get_logger().error(f"Map broadcast failed: {e}")
+    
     def _run_ws(self):
         asyncio.run(self.websocket_server.start())
 
     
     def _sanitize_map_name(self, name: str):
 
-        if not isinstance(name, str):
-            return None
+            if not isinstance(name, str):
+                return None
 
-        if not re.fullmatch(
-            r"[a-zA-Z0-9_-]+",
-            name,
-        ):
-            return None
+            if not re.fullmatch(
+                r"[a-zA-Z0-9_-]+",
+                name,
+            ):
+                return None
 
-        return name
+            return name
         
         
 
@@ -611,239 +526,7 @@ class CommandGatewayNode(Node):
             self.websocket_server.loop,
 
         )
-    def _save_path(self, name, points):
 
-         if not isinstance(points, list):
-            self._path_error("Invalid points")
-            return
-
-
-         if len(points) == 0 or len(points) > 1000:
-            self._path_error("Invalid point count")
-            return
-
-
-         for p in points:
-
-            if (
-                not isinstance(p, list)
-                or len(p) != 3
-            ):
-                self._path_error("Invalid point format")
-                return
-
-
-         filepath = os.path.join(
-            self.paths_directory,
-            name + ".json"
-        )
-
-
-         with open(filepath, "w") as f:
-
-            json.dump(
-                {
-                    "points": points
-                },
-                f
-            )
-
-
-         asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast({
-                "type": "path_op_result",
-                "ok": True,
-                "error": "",
-            }),
-            self.websocket_server.loop,
-        )
-
-
-    def _load_path(self, name):
-
-        filepath = os.path.join(
-            self.paths_directory,
-            name + ".json"
-        )
-
-
-        if not os.path.exists(filepath):
-
-            self._path_error(
-                "Path does not exist"
-            )
-
-            return
-
-
-        with open(filepath) as f:
-
-            data=json.load(f)
-
-
-        asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast({
-                "type":"path_data",
-                "name":name,
-                "points":data["points"],
-            }),
-            self.websocket_server.loop,
-        )
-
-
-
-    def _send_path_list(self):
-
-        try:
-
-            paths=[]
-
-            for file in os.listdir(
-                self.paths_directory
-            ):
-
-                if file.endswith(".json"):
-
-                    paths.append(
-                        file[:-5]
-                    )
-
-
-            paths.sort()
-
-
-            frame={
-                "type":"path_list",
-                "paths":paths,
-            }
-
-
-        except Exception as e:
-
-            frame={
-                "type":"path_op_result",
-                "ok":False,
-                "error":str(e),
-            }
-
-
-        asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast(frame),
-            self.websocket_server.loop,
-        )
-
-
-
-    def _delete_path(self,name):
-
-        filepath=os.path.join(
-            self.paths_directory,
-            name+".json"
-        )
-
-
-        if os.path.exists(filepath):
-
-            os.remove(filepath)
-
-            asyncio.run_coroutine_threadsafe(
-                self.websocket_server.broadcast({
-                    "type":"path_op_result",
-                    "ok":True,
-                    "error":"",
-                }),
-                self.websocket_server.loop,
-            )
-
-        else:
-
-            self._path_error(
-                "Path does not exist"
-            )
-
-
-
-    def _path_error(self,msg):
-
-        asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast({
-                "type":"path_op_result",
-                "ok":False,
-                "error":msg,
-            }),
-            self.websocket_server.loop,
-        )
-    def _map_callback(self, msg):
-
-     self.get_logger().info("MAP RECEIVED")
- 
-     try:
-
-        frame = encode_occupancy_grid(msg)
-        frame["type"] = "map"
-        frame["pose"] = self._latest_pose
-
-        asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast(frame),
-            self.websocket_server.loop,
-        )
-
-     except Exception as e:
-
-        self.get_logger().error(
-            f"Map broadcast failed: {e}"
-        )
-    def _odom_callback(self, msg):
-
-      pose = msg.pose.pose
-
-      q = pose.orientation
-
-      siny_cosp = 2.0 * (
-            q.w * q.z +
-            q.x * q.y
-        )
-
-      cosy_cosp = 1.0 - 2.0 * (
-            q.y * q.y +
-            q.z * q.z
-        )
-
-      yaw = math.atan2(
-            siny_cosp,
-            cosy_cosp
-        )
-
-      self._latest_pose = {
-            "x": pose.position.x,
-            "y": pose.position.y,
-            "yaw": yaw,
-        }
-
-
-
-    def _map_callback(self, msg):
-
-        self.get_logger().info("MAP RECEIVED")
-
-        try:
-
-            frame = encode_occupancy_grid(msg)
-            frame["type"] = "map"
-            frame["pose"] = self._latest_pose
-
-
-            asyncio.run_coroutine_threadsafe(
-                self.websocket_server.broadcast(frame),
-                self.websocket_server.loop,
-            )
-
-
-        except Exception as e:
-
-            self.get_logger().error(
-                f"Map broadcast failed: {e}"
-            )         
     def _send_slam_mode(self):
 
         mode = self.slam_mode.capitalize()

@@ -5,17 +5,11 @@ import { initTeleopButtons } from "./teleop_control.js";
 
 import { renderBattery } from "./battery_panel.js";
 import { renderStatus } from "./status_panel.js";
-import {
-    getCleanPath
-} from "./path_draw.js";
 
 import {
     initMapPanel,
     handleMapFrame,
 } from "./map_panel.js";
-import {
-    initPathPanel,
-} from "./path_panel.js";
 import {
     renderMap,
     setGoalMode,
@@ -32,27 +26,6 @@ export function connect(onMessage) {
 }
 
 export let websocket = null;
-
-export function sendMessage(message)
-{
-
-    if(websocket === null)
-    {
-        return;
-    }
-
-
-    if(websocket.readyState !== WebSocket.OPEN)
-    {
-        return;
-    }
-
-
-    websocket.send(
-        JSON.stringify(message)
-    );
-
-}
 
 
 function handleTelemetryFrame(data) {
@@ -75,10 +48,6 @@ function handleTelemetryFrame(data) {
             renderStatus(data);
             break;
 
-        case "path_status":
-            renderStatus(data);
-            break;
-
         case "map_list":
         case "map_op_result":
         case "slam_mode":
@@ -86,15 +55,10 @@ function handleTelemetryFrame(data) {
             handleMapFrame(data);
 
             break;
-        case "path_list":
-        case "path_data":
-        case "path_op_result":
-
-            window.pathPanelHandler(data);
-
-            break;
 
     }
+
+    console.log("Telemetry frame received:", data);
 
 }
 
@@ -109,19 +73,13 @@ initTeleopButtons(
 window.wsClient = websocket;
 
 
-
 websocket.onopen = () => {
 
     console.log("Connected to AMR websocket");
 
     initMapPanel();
 
-    initPathPanel();
-
 };
-};
-
-
 
 const goalButton =
     document.getElementById("goal-toggle");
@@ -135,46 +93,3 @@ goalButton.addEventListener("click", () => {
     );
 
 });
-
-const sendPathButton =
-    document.getElementById("send-path-btn");
-
-
-if (sendPathButton) {
-
-    sendPathButton.addEventListener(
-        "click",
-        () => {
-
-            const points =
-                getCleanPath();
-
-
-            const navPoints =
-                points.map(
-                    p => [
-                        p.x,
-                        p.y,
-                        0.0
-                    ]
-                );
-
-
-            sendMessage({
-
-                type: "nav_path",
-
-                points: navPoints
-
-            });
-
-
-            console.log(
-                "Sent nav_path:",
-                navPoints
-            );
-
-        }
-    );
-
-}
