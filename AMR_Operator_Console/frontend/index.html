@@ -29,3 +29,97 @@
   <script type="module" src="src/battery_panel.js"></script>
 </body>
 </html>
+
+<script
+    type="module"
+    src="./src/lift_panel.js">
+</script>
+
+<div id="lift-panel" class="panel">
+
+    <h3>Lift Control</h3>
+
+
+    <div id="lift-fault" class="lift-fault">
+        OK
+    </div>
+
+
+    <div class="lift-controls">
+
+        <button id="lift-up">
+            Raise
+        </button>
+
+
+        <button id="lift-down">
+            Lower
+        </button>
+
+
+        <button id="lift-stop">
+            Stop
+        </button>
+
+    </div>
+
+
+
+    <div class="lift-target">
+
+        <label>
+            Target Position
+        </label>
+
+        <input
+            id="lift-target"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="0"
+        >
+
+    </div>
+
+
+
+    <div class="lift-readout">
+
+        <p>
+            Position:
+            <span id="lift-position">
+                0
+            </span>
+        </p>
+
+
+        <div class="lift-bar">
+
+            <div
+                id="lift-position-bar"
+                class="lift-bar-fill">
+            </div>
+
+        </div>
+
+
+        <p>
+            Actuator A:
+            <span id="lift-current-a">
+                0 A
+            </span>
+        </p>
+
+
+        <p>
+            Actuator B:
+            <span id="lift-current-b">
+                0 A
+            </span>
+        </p>
+
+    </div>
+
+
+</div>
