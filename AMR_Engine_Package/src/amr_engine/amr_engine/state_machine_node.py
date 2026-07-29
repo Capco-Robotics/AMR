@@ -4,6 +4,8 @@ import rclpy
 
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.qos import qos_profile_action_status_default
+from action_msgs.msg import GoalStatusArray
 
 from std_msgs.msg import String
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
@@ -54,6 +56,12 @@ class StateMachineNode(Node):
             self._lift_state_callback,
             10,
         )
+        self.create_subscription(
+            GoalStatusArray,
+            "/move_lift/_action/status",
+            self._lift_status_callback,
+            qos_profile_action_status_default,
+        )
 
         # Action Client
         self.move_lift_client = ActionClient(
@@ -83,6 +91,11 @@ class StateMachineNode(Node):
         self.get_logger().info("State Machine Node Started")
 
     def _publish_state(self):
+
+        if self.diagnostics.has_active_fault():
+            self.state = ERROR
+            self.fault_latched = True
+
         msg = String()
         msg.data = self.state
         self.state_pub.publish(msg)
@@ -99,12 +112,31 @@ class StateMachineNode(Node):
             self.fault_latched = True
 
     def _lift_state_callback(self, msg):
+        pass
 
-        if self.state == LIFTING:
-            if abs(msg.position) < 0.01:
-                pass
+    def _lift_status_callback(self, msg):
 
-        if self.diagnostics.has_active_fault():
+        if not msg.status_list:
+            return
+
+        status = msg.status_list[-1].status
+
+        if status in (
+            1,  # ACCEPTED
+            2,  # EXECUTING
+        ):
+            if not self.fault_latched:
+                self.state = LIFTING
+
+        elif status == 4:  # SUCCEEDED
+            if not self.fault_latched:
+                self.state = IDLE
+
+        elif status == 5:  # CANCELED
+            if not self.fault_latched:
+                self.state = IDLE
+
+        elif status == 6:  # ABORTED
             self.state = ERROR
             self.fault_latched = True
 
@@ -127,7 +159,7 @@ class StateMachineNode(Node):
         goal = MoveLift.Goal()
         goal.target_position = target
 
-        self.state = LIFTING
+        
 
         future = self.move_lift_client.send_goal_async(
             goal,
