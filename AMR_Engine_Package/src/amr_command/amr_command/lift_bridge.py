@@ -9,10 +9,26 @@ from amr_msgs.action import MoveLift
 
 
 class LiftBridge:
+    """
+    Lift ROS <-> WebSocket bridge.
+
+    Responsibilities:
+    - Subscribe /lift/state
+    - Encode lift telemetry frame
+    - Broadcast lift frame through gateway websocket
+    - Handle lift_cmd from operator console
+    - Send MoveLift action goals
+    - Cancel active goals on stop
+    """
+
 
     def __init__(self, node):
 
         self.node = node
+
+        # -----------------------------
+        # Lift Action Client
+        # -----------------------------
 
         self.action_client = ActionClient(
             node,
@@ -20,22 +36,40 @@ class LiftBridge:
             "/lift/move"
         )
 
-        self.current_position = 0.0
-        self.target_position = 0.0
+
+        # -----------------------------
+        # Lift State Cache
+        # -----------------------------
+
+        self.position = 0.0
+        self.target = 0.0
+
         self.moving = False
 
-        self.actuator_current = [0.0, 0.0]
+        self.actuator_current = [
+            0.0,
+            0.0
+        ]
 
         self.limit_upper = False
         self.limit_lower = False
 
-        self.fault = False
         self.overload = False
+        self.fault = False
+
 
         self.active_goal = None
 
-        self.last_broadcast = 0.0
 
+        # 10 Hz broadcast throttle
+
+        self.last_broadcast_time = 0.0
+
+
+
+        # -----------------------------
+        # ROS Subscription
+        # -----------------------------
 
         self.state_sub = node.create_subscription(
             LiftState,
@@ -46,17 +80,18 @@ class LiftBridge:
 
 
         self.node.get_logger().info(
-            "LiftBridge initialized"
+            "LiftBridge started"
         )
 
 
-    # -----------------------------------------
-    # Lift State Subscriber
-    # -----------------------------------------
+
+    # =================================================
+    # Lift State Callback
+    # =================================================
 
     def _lift_state_callback(self, msg):
 
-        self.current_position = msg.position
+        self.position = msg.position
 
         self.limit_upper = msg.limit_upper
         self.limit_lower = msg.limit_lower
@@ -68,14 +103,27 @@ class LiftBridge:
         self.fault = msg.level_fault
 
 
+        # overload ticket not available yet
+
+        self.overload = False
+
+
+
         now = time.monotonic()
 
-        # 10 Hz throttle
-        if now - self.last_broadcast < 0.1:
+
+        # throttle 10Hz
+
+        if (
+            now -
+            self.last_broadcast_time
+        ) < 0.1:
+
             return
 
 
-        self.last_broadcast = now
+        self.last_broadcast_time = now
+
 
 
         frame = {
@@ -83,10 +131,10 @@ class LiftBridge:
             "type": "lift",
 
             "position":
-                self.current_position,
+                self.position,
 
             "target":
-                self.target_position,
+                self.target,
 
             "moving":
                 self.moving,
@@ -105,6 +153,7 @@ class LiftBridge:
 
             "fault":
                 self.fault,
+
         }
 
 
@@ -112,9 +161,9 @@ class LiftBridge:
 
 
 
-    # -----------------------------------------
-    # Websocket command handler
-    # -----------------------------------------
+    # =================================================
+    # Receive websocket lift_cmd
+    # =================================================
 
     def handle(self, data):
 
@@ -123,15 +172,15 @@ class LiftBridge:
         )
 
 
-        allowed = [
+        allowed_actions = {
             "raise",
             "lower",
             "stop",
             "target"
-        ]
+        }
 
 
-        if action not in allowed:
+        if action not in allowed_actions:
 
             self.send_error(
                 "Invalid lift action"
@@ -141,7 +190,23 @@ class LiftBridge:
 
 
 
-        if action == "target":
+        target = None
+
+
+
+        if action == "raise":
+
+            target = 1.0
+
+
+
+        elif action == "lower":
+
+            target = 0.0
+
+
+
+        elif action == "target":
 
             target = data.get(
                 "target"
@@ -175,6 +240,16 @@ class LiftBridge:
 
 
 
+        elif action == "stop":
+
+            self.cancel_goal()
+
+            return
+
+
+
+        # Non blocking check
+
         if not self.action_client.server_is_ready():
 
             self.send_error(
@@ -185,49 +260,25 @@ class LiftBridge:
 
 
 
-        if action == "raise":
-
-            target = 1.0
-
-
-        elif action == "lower":
-
-            target = 0.0
-
-
-        elif action == "target":
-
-            target = float(
-                data["target"]
-            )
-
-
-        elif action == "stop":
-
-            self.cancel_goal()
-
-            return
-
-
-
         self.send_goal(
-            target
+            float(target)
         )
 
 
 
-    # -----------------------------------------
-    # Send MoveLift goal
-    # -----------------------------------------
+    # =================================================
+    # Send MoveLift Goal
+    # =================================================
 
     def send_goal(self, target):
 
         goal = MoveLift.Goal()
 
+
         goal.target_position = target
 
 
-        self.target_position = target
+        self.target = target
 
 
         future = (
@@ -237,11 +288,12 @@ class LiftBridge:
 
 
         future.add_done_callback(
-            self.goal_response
+            self._goal_response_callback
         )
 
 
-    def goal_response(self, future):
+
+    def _goal_response_callback(self, future):
 
         goal_handle = future.result()
 
@@ -257,15 +309,40 @@ class LiftBridge:
             return
 
 
+
         self.active_goal = goal_handle
 
         self.moving = True
 
 
+        self.node.get_logger().info(
+            "Lift goal accepted"
+        )
 
-    # -----------------------------------------
-    # Stop / cancel
-    # -----------------------------------------
+
+        result_future = (
+            goal_handle
+            .get_result_async()
+        )
+
+
+        result_future.add_done_callback(
+            self._goal_finished_callback
+        )
+
+
+
+    def _goal_finished_callback(self, future):
+
+        self.moving = False
+
+        self.active_goal = None
+
+
+
+    # =================================================
+    # Cancel Goal
+    # =================================================
 
     def cancel_goal(self):
 
@@ -278,29 +355,33 @@ class LiftBridge:
 
 
 
-    # -----------------------------------------
-    # Broadcast helper
-    # -----------------------------------------
+    # =================================================
+    # Websocket Broadcast
+    # =================================================
 
     def broadcast(self, frame):
 
-        if self.node.websocket_server.loop:
+        if not self.node.websocket_server.loop:
 
-            asyncio.run_coroutine_threadsafe(
-
-                self.node.websocket_server.broadcast(
-                    frame
-                ),
-
-                self.node.websocket_server.loop
-
-            )
+            return
 
 
 
-    # -----------------------------------------
-    # Error frame
-    # -----------------------------------------
+        asyncio.run_coroutine_threadsafe(
+
+            self.node.websocket_server.broadcast(
+                frame
+            ),
+
+            self.node.websocket_server.loop
+
+        )
+
+
+
+    # =================================================
+    # Error Frame
+    # =================================================
 
     def send_error(self, message):
 
