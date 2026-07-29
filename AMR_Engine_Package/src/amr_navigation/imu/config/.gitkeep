@@ -1,0 +1,6 @@
+Reserved for IMU filter/driver parameters.
+
+This file exists so the directory survives a clone: CMakeLists.txt installs
+config/ and launch/, and git does not track empty directories -- without it
+`colcon build` fails here with "ament_cmake_symlink_install_directory() can't
+find .../imu/config" on any fresh checkout.
