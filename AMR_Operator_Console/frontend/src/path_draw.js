@@ -110,6 +110,11 @@ export function initPathDraw() {
 
     const epsilonValue = document.getElementById("epsilon-value");
 
+    // #draw-controls is display:none in the stylesheet and nothing ever
+    // unhid it, so Send Path / Redraw / Clear / Stop and the epsilon slider
+    // were unreachable in the browser. The draw toggle owns their visibility.
+    const drawControls = document.getElementById("draw-controls");
+
     if (!canvas || !drawToggle) {
         return;
     }
@@ -118,17 +123,30 @@ export function initPathDraw() {
         return drawToggle.classList.contains("active");
     }
 
+    function syncDrawControls() {
+
+        if (drawControls) {
+            drawControls.style.display =
+                drawModeActive() ? "block" : "none";
+        }
+
+    }
+
     drawToggle.addEventListener("click", () => {
 
         drawToggle.classList.toggle("active");
 
         setDrawMode(drawModeActive());
 
+        syncDrawControls();
+
         if (!drawModeActive()) {
             drawing = false;
         }
 
     });
+
+    syncDrawControls();
 
     if (epsilonSlider && epsilonValue) {
 
