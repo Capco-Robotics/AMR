@@ -14,7 +14,8 @@
   <depend>geometry_msgs</depend>
   <depend>slam_toolbox</depend>
   <depend>rcl_interfaces</depend>
-  <!-- NavigateThroughPoses (path execution) and its action result status. -->
+  <!-- NavigateThroughPoses (path execution) and its action result status,
+       plus CostmapFilterInfo for the keep-out zone filter mask. -->
   <depend>nav2_msgs</depend>
   <depend>action_msgs</depend>
 

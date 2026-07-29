@@ -14,9 +14,17 @@ import json
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+
+from nav2_msgs.msg import CostmapFilterInfo
 
 from rcl_interfaces.srv import GetParameters
 
@@ -28,6 +36,7 @@ from slam_toolbox.srv import (
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
 from amr_command.path_executor import PathExecutor
+from amr_command import keepout_zones
 
 
 
@@ -106,6 +115,48 @@ class CommandGatewayNode(Node):
             )
         )
 
+        self.declare_parameter(
+            "zones_directory",
+            os.path.join(os.path.expanduser("~"), ".ros", "amr_zones"),
+        )
+
+        self.zones_directory = os.path.abspath(
+            os.path.expanduser(
+                self.get_parameter("zones_directory").value
+            )
+        )
+
+        # How far to grow each zone when rasterising it. Nav2 runs costmap
+        # filters after the layer stack, so the inflation layer never sees
+        # keep-out cells: without a margin here the planner keeps the robot's
+        # *centre* out of a zone while its body clips the corner. Defaults to
+        # the inscribed radius of the footprint in nav2_params.yaml.
+        self.declare_parameter("zone_margin", 0.4)
+
+        self.zone_margin = float(
+            self.get_parameter("zone_margin").value
+        )
+
+        try:
+            self.zone_store = keepout_zones.ZoneStore(self.zones_directory)
+        except Exception as e:
+            # A corrupt store must be loud: silently starting with zero zones
+            # would mean publishing an empty mask and driving through areas
+            # the operator believes are still blocked.
+            self.get_logger().error(
+                f"Could not read keep-out zones from {self.zones_directory}: "
+                f"{e}. Starting with no zones -- previously saved zones are "
+                f"NOT being enforced."
+            )
+            self.zone_store = keepout_zones.ZoneStore(
+                self.zones_directory,
+                filename="zones.recovered.json",
+            )
+
+        # Geometry of the most recent /map, so a zone edit can be rasterised
+        # onto the same grid without waiting for the next map update.
+        self._latest_map_info = None
+
         # Latest known slam_toolbox mode, refreshed from the node itself (see
         # _refresh_slam_mode). None until we have actually heard back.
         self.slam_mode = None
@@ -118,6 +169,32 @@ class CommandGatewayNode(Node):
             self.paths_directory,
             exist_ok=True,
         )
+
+        # Both topics have to be latched (transient_local): Nav2's
+        # KeepoutFilter subscribes to them once, at costmap configure time,
+        # and never polls again -- with volatile QoS a filter that comes up
+        # after the gateway would sit waiting for a mask that was already
+        # sent, and enforce nothing.
+        latched = QoSProfile(
+            depth=1,
+            history=HistoryPolicy.KEEP_LAST,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
+        self.keepout_mask_pub = self.create_publisher(
+            OccupancyGrid,
+            "/keepout_filter_mask",
+            latched,
+        )
+
+        self.filter_info_pub = self.create_publisher(
+            CostmapFilterInfo,
+            "/costmap_filter_info",
+            latched,
+        )
+
+        self._publish_filter_info()
 
         threading.Thread(
             target=self._run_ws,
@@ -299,6 +376,31 @@ class CommandGatewayNode(Node):
 
                     return
 
+                # Nav2 would plan around a keep-out on its own, but
+                # NavigateThroughPoses treats these points as goal *poses*: a
+                # pose inside a zone is simply unreachable, and the run dies
+                # partway with an opaque abort. Refusing here names the zone.
+                violated = self.zone_store.path_violations(points)
+
+                if violated:
+
+                    message = (
+                        "Path crosses keep-out "
+                        f"{'zones' if len(violated) > 1 else 'zone'}: "
+                        f"{', '.join(violated)}"
+                    )
+
+                    self.get_logger().warning(f"Rejected nav_path: {message}")
+
+                    self._broadcast({
+                        "type": "path_status",
+                        "state": "rejected",
+                        "message": message,
+                        "zones": violated,
+                    })
+
+                    return
+
                 self.get_logger().info(
                     f"Received nav_path with {len(points)} points"
                 )
@@ -308,6 +410,41 @@ class CommandGatewayNode(Node):
             elif frame_type == "nav_path_cancel":
 
                 self.path_executor.cancel_path()
+
+            elif frame_type == "zone_list":
+
+                self._broadcast_zones()
+
+            elif frame_type == "zone_save":
+
+                zone_name = self._sanitize_map_name(
+                    data.get("name", "")
+                )
+
+                if zone_name is None:
+                    self._zone_result(False, "Invalid zone name")
+                    return
+
+                self._save_zone(
+                    zone_name,
+                    data.get("polygon", []),
+                )
+
+            elif frame_type == "zone_delete":
+
+                zone_name = self._sanitize_map_name(
+                    data.get("name", "")
+                )
+
+                if zone_name is None:
+                    self._zone_result(False, "Invalid zone name")
+                    return
+
+                self._delete_zone(zone_name)
+
+            elif frame_type == "zone_clear":
+
+                self._clear_zones()
 
             elif frame_type == "map_save":
 
@@ -850,6 +987,130 @@ class CommandGatewayNode(Node):
             }),
             self.websocket_server.loop,
         )
+    # ---- keep-out zones -------------------------------------------------
+
+    def _publish_filter_info(self):
+        """Tell KeepoutFilter how to read the mask. Latched, so send once.
+
+        `space = data * multiplier + base`, and the keep-out filter treats the
+        result as a cost. Mask cells are 100 (blocked) or 0, which with
+        multiplier 1.0 / base 0.0 is the conversion nav2's own keep-out
+        tutorial uses.
+        """
+
+        info = CostmapFilterInfo()
+
+        info.header.frame_id = "map"
+        info.header.stamp = self.get_clock().now().to_msg()
+
+        info.type = 0  # keepout/lanes filter
+        info.filter_mask_topic = "/keepout_filter_mask"
+        info.base = 0.0
+        info.multiplier = 1.0
+
+        self.filter_info_pub.publish(info)
+
+    def _publish_zone_mask(self):
+        """Rasterise the stored zones onto the current map grid and publish.
+
+        Silently does nothing until a /map has arrived: the mask has to share
+        the map's geometry, and there is nothing to align to before then. The
+        map callback calls this again once one shows up.
+        """
+
+        map_info = self._latest_map_info
+
+        if map_info is None:
+            return
+
+        try:
+
+            data = keepout_zones.rasterise(
+                self.zone_store.polygons(),
+                map_info.width,
+                map_info.height,
+                map_info.resolution,
+                map_info.origin.position.x,
+                map_info.origin.position.y,
+                margin_m=self.zone_margin,
+            )
+
+        except Exception as e:
+
+            self.get_logger().error(f"Keep-out mask rasterise failed: {e}")
+            return
+
+        mask = OccupancyGrid()
+
+        mask.header.frame_id = "map"
+        mask.header.stamp = self.get_clock().now().to_msg()
+
+        mask.info = map_info
+        mask.data = data
+
+        self.keepout_mask_pub.publish(mask)
+
+        self.get_logger().info(
+            f"Published keep-out mask "
+            f"({len(self.zone_store.names())} zones, "
+            f"margin {self.zone_margin:.2f} m)"
+        )
+
+    def _broadcast_zones(self):
+
+        self._broadcast({
+            "type": "zone_list",
+            "zones": self.zone_store.as_list(),
+        })
+
+    def _zone_result(self, ok, error=""):
+
+        self._broadcast({
+            "type": "zone_op_result",
+            "ok": ok,
+            "error": error,
+        })
+
+    def _save_zone(self, name, polygon):
+
+        error = self.zone_store.add(name, polygon)
+
+        if error is not None:
+            self._zone_result(False, error)
+            return
+
+        self.get_logger().info(
+            f"Saved keep-out zone '{name}' ({len(polygon)} points)"
+        )
+
+        self._publish_zone_mask()
+        self._zone_result(True)
+        self._broadcast_zones()
+
+    def _delete_zone(self, name):
+
+        error = self.zone_store.delete(name)
+
+        if error is not None:
+            self._zone_result(False, error)
+            return
+
+        self.get_logger().info(f"Deleted keep-out zone '{name}'")
+
+        self._publish_zone_mask()
+        self._zone_result(True)
+        self._broadcast_zones()
+
+    def _clear_zones(self):
+
+        self.zone_store.clear()
+
+        self.get_logger().warning("Cleared every keep-out zone")
+
+        self._publish_zone_mask()
+        self._zone_result(True)
+        self._broadcast_zones()
+
     def _odom_callback(self, msg):
 
       pose = msg.pose.pose
@@ -879,7 +1140,33 @@ class CommandGatewayNode(Node):
 
 
 
+    @staticmethod
+    def _map_geometry(info):
+
+        if info is None:
+            return None
+
+        return (
+            info.width,
+            info.height,
+            info.resolution,
+            info.origin.position.x,
+            info.origin.position.y,
+        )
+
     def _map_callback(self, msg):
+
+        # Deliberately ahead of the websocket guard below: the keep-out mask
+        # has to track the map's geometry whether or not a console is
+        # connected. A growing SLAM map re-origins itself as it explores, and
+        # a mask still aligned to the old grid would put the no-go areas in
+        # the wrong place.
+        previous = self._map_geometry(self._latest_map_info)
+
+        self._latest_map_info = msg.info
+
+        if previous != self._map_geometry(msg.info):
+            self._publish_zone_mask()
 
         # The websocket thread sets .loop once it is up. Maps can arrive
         # before that, and run_coroutine_threadsafe(None) raises inside a

@@ -131,6 +131,13 @@ local_costmap:
         - obstacle_layer
         - inflation_layer
 
+      # Costmap *filters* run after the layer stack above. amr_command
+      # publishes both the mask and its filter info on latched topics, so no
+      # costmap_filter_info_server / map_server pair is needed and an
+      # operator's zone edit takes effect without a restart.
+      filters:
+        - keepout_filter
+
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         observation_sources: scan
@@ -144,6 +151,11 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.45
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: /costmap_filter_info
 
 global_costmap:
   global_costmap:
@@ -160,6 +172,12 @@ global_costmap:
         - static_layer
         - obstacle_layer
         - inflation_layer
+
+      # Same filter on the global costmap, so the planner refuses to route
+      # through a zone in the first place rather than only the controller
+      # refusing to drive into one.
+      filters:
+        - keepout_filter
 
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -178,6 +196,11 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.45
+
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: /costmap_filter_info
 
 velocity_smoother:
   ros__parameters:
