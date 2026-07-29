@@ -97,6 +97,22 @@ bt_navigator:
     global_frame: map
     robot_base_frame: base_link
     odom_topic: /odom
+
+# NavigateThroughPoses routes its plan through the smoother server, which
+# nav2_bringup brings up regardless; without these it runs on library
+# defaults.
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+
+    smoother_plugins: ["simple_smoother"]
+
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
 local_costmap:
   local_costmap:
     ros__parameters:

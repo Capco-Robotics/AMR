@@ -11,8 +11,12 @@
   <depend>amr_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>slam_toolbox</depend>
   <depend>rcl_interfaces</depend>
+  <!-- NavigateThroughPoses (path execution) and its action result status. -->
+  <depend>nav2_msgs</depend>
+  <depend>action_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

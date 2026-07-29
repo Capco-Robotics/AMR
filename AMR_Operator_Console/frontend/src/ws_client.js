@@ -18,6 +18,7 @@ import {
 import {
     initPathPanel,
     refreshPaths,
+    renderPathStatus,
 } from "./path_panel.js";
 import {
     renderMap,
@@ -78,8 +79,11 @@ function handleTelemetryFrame(data) {
             renderStatus(data);
             break;
 
+        // Nav2 path execution progress. This used to fall through to
+        // renderStatus(), which is still an unimplemented stub, so the
+        // "Path Status" readout never left "Idle".
         case "path_status":
-            renderStatus(data);
+            renderPathStatus(data);
             break;
 
         case "map_list":

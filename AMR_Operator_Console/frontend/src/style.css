@@ -117,6 +117,20 @@ body {
     font-weight:bold;
 
 }
+
+#path-status.path-status-error{
+
+    color:#c62828;
+
+}
+
+#draw-toggle.active{
+
+    background: green;
+
+    color: white;
+
+}
 .path-item {
     margin: 5px;
 }

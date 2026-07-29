@@ -27,6 +27,7 @@ from slam_toolbox.srv import (
 
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
+from amr_command.path_executor import PathExecutor
 
 
 
@@ -63,6 +64,11 @@ class CommandGatewayNode(Node):
         self.websocket_server._on_message_cb = self._on_ws_frame
 
         self.arbiter = OperatorInputArbiter()
+
+        # Executes operator-drawn paths via Nav2. Reports progress back to the
+        # console through _broadcast, which is safe to call before the
+        # websocket loop exists.
+        self.path_executor = PathExecutor(self, self._broadcast)
 
         self._latest_pose = None
 
@@ -277,38 +283,31 @@ class CommandGatewayNode(Node):
 
                 points = data.get("points", [])
 
-                if not isinstance(points, list):
+                error = self._validate_path_points(points)
+
+                if error is not None:
 
                     self.get_logger().warning(
-                        "Rejected invalid path"
+                        f"Rejected nav_path: {error}"
                     )
 
+                    self._broadcast({
+                        "type": "path_status",
+                        "state": "rejected",
+                        "message": error,
+                    })
+
                     return
-
-
-                for p in points:
-
-                    if (
-                        not isinstance(p, list)
-                        or len(p) != 3
-                        or not all(
-                            isinstance(v, (int, float))
-                            and math.isfinite(v)
-                            for v in p
-                        )
-                    ):
-
-                        self.get_logger().warning(
-                            "Rejected invalid path points"
-                        )
-
-                        return
-
 
                 self.get_logger().info(
                     f"Received nav_path with {len(points)} points"
                 )
 
+                self.path_executor.send_path(points)
+
+            elif frame_type == "nav_path_cancel":
+
+                self.path_executor.cancel_path()
 
             elif frame_type == "map_save":
 
@@ -429,6 +428,22 @@ class CommandGatewayNode(Node):
        except Exception as e:
          self.get_logger().error(f"Map broadcast failed: {e}")
      
+    def _broadcast(self, frame):
+        """Push a frame to every console, from any thread.
+
+        The websocket thread only publishes .loop once it is up; frames
+        produced before that (action feedback, timers, subscriptions) would
+        otherwise raise inside whatever callback emitted them.
+        """
+
+        if not self.websocket_server.loop:
+            return
+
+        asyncio.run_coroutine_threadsafe(
+            self.websocket_server.broadcast(frame),
+            self.websocket_server.loop,
+        )
+
     def _run_ws(self):
         asyncio.run(self.websocket_server.start())
 
@@ -447,6 +462,37 @@ class CommandGatewayNode(Node):
         return name
         
         
+
+    # Both the "store this path" and "drive this path" halves have to agree on
+    # what a path is, so they share one validator. Returns None when the points
+    # are usable, or an operator-facing reason why they are not.
+    _MAX_PATH_POINTS = 1000
+
+    def _validate_path_points(self, points):
+
+        if not isinstance(points, list):
+            return "Invalid points"
+
+        if len(points) == 0 or len(points) > self._MAX_PATH_POINTS:
+            return "Invalid point count"
+
+        for p in points:
+
+            if not isinstance(p, list) or len(p) != 3:
+                return "Invalid point format"
+
+            # bool is a subclass of int, and json.dump happily writes NaN and
+            # Infinity -- neither of which is valid JSON, and both of which
+            # reach Nav2 as an unreachable goal.
+            if not all(
+                isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and math.isfinite(v)
+                for v in p
+            ):
+                return "Invalid point value"
+
+        return None
 
     def _save_map(self, map_name):
 
@@ -660,36 +706,11 @@ class CommandGatewayNode(Node):
         )
     def _save_path(self, name, points):
 
-        if not isinstance(points, list):
-            self._path_error("Invalid points")
+        error = self._validate_path_points(points)
+
+        if error is not None:
+            self._path_error(error)
             return
-
-        if len(points) == 0 or len(points) > 1000:
-            self._path_error("Invalid point count")
-            return
-
-        for p in points:
-
-            if (
-                not isinstance(p, list)
-                or len(p) != 3
-            ):
-                self._path_error("Invalid point format")
-                return
-
-            # Shape alone is not enough: json.dump happily writes NaN and
-            # Infinity, which are not valid JSON, so a poisoned point would
-            # round-trip out of _load_path as a value no consumer can use --
-            # and reach Nav2 as an unreachable goal. The nav_goal branch
-            # already screens for this; match it here.
-            if not all(
-                isinstance(v, (int, float))
-                and not isinstance(v, bool)
-                and math.isfinite(v)
-                for v in p
-            ):
-                self._path_error("Invalid point value")
-                return
 
         filepath = os.path.join(
             self.paths_directory,
