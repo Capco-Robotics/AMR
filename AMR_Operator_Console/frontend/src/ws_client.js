@@ -6,15 +6,18 @@ import { initTeleopButtons } from "./teleop_control.js";
 import { renderBattery } from "./battery_panel.js";
 import { renderStatus } from "./status_panel.js";
 import {
-    getCleanPath
+    getCleanPath,
+    initPathDraw,
 } from "./path_draw.js";
 
 import {
     initMapPanel,
     handleMapFrame,
+    refreshMaps,
 } from "./map_panel.js";
 import {
     initPathPanel,
+    refreshPaths,
 } from "./path_panel.js";
 import {
     renderMap,
@@ -108,17 +111,22 @@ initTeleopButtons(
 
 window.wsClient = websocket;
 
+// Bind panel DOM once, not per connection. Re-binding on every open would
+// stack duplicate listeners the moment a reconnect is added.
+initMapPanel(websocket);
+initPathPanel();
+initPathDraw();
 
 
 websocket.onopen = () => {
 
     console.log("Connected to AMR websocket");
 
-    initMapPanel();
+    // Only the list pulls belong here -- they need an open socket, and they
+    // are safe to repeat if a reconnect is ever added.
+    refreshMaps();
+    refreshPaths();
 
-    initPathPanel();
-
-};
 };
 
 
@@ -146,33 +154,22 @@ if (sendPathButton) {
         "click",
         () => {
 
-            const points =
-                getCleanPath();
+            // getCleanPath() already returns wire-format [x, y, theta]
+            // points. This used to re-map them as p.x/p.y, which produced a
+            // list of [undefined, undefined, 0.0] the gateway rejected.
+            const points = getCleanPath();
 
-
-            const navPoints =
-                points.map(
-                    p => [
-                        p.x,
-                        p.y,
-                        0.0
-                    ]
-                );
-
+            if (points.length === 0) {
+                return;
+            }
 
             sendMessage({
 
                 type: "nav_path",
 
-                points: navPoints
+                points: points
 
             });
-
-
-            console.log(
-                "Sent nav_path:",
-                navPoints
-            );
 
         }
     );

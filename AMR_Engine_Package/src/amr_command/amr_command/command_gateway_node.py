@@ -18,8 +18,10 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 
-from slam_toolbox.srv import ( 
-    SerializePoseGraph, 
+from rcl_interfaces.srv import GetParameters
+
+from slam_toolbox.srv import (
+    SerializePoseGraph,
     DeserializePoseGraph
 )
 
@@ -66,30 +68,41 @@ class CommandGatewayNode(Node):
 
         self.declare_parameter(
             "maps_directory",
-            "maps",
+            # Absolute by default. We list this directory relative to our own
+            # process CWD, but slam_toolbox writes the file relative to *its*
+            # CWD -- if the two are launched from different places a
+            # "successful" save never appears in the list and Load's existence
+            # check fails. An absolute path removes the ambiguity, which is
+            # also why the filenames handed to the services below are absolute.
+            os.path.join(os.path.expanduser("~"), ".ros", "amr_maps"),
         )
 
-        self.maps_directory = self.get_parameter(
-            "maps_directory"
-        ).value
-
-        self.declare_parameter(
-           "paths_directory",
-           "paths",
-)
-
-        self.paths_directory = self.get_parameter(
-           "paths_directory"
-        ).value
-
-        self.declare_parameter(
-            "slam_mode",
-            "mapping",
+        # Normalise whatever we were handed, so a relative override still
+        # resolves to an absolute path instead of quietly reintroducing the
+        # CWD mismatch above.
+        self.maps_directory = os.path.abspath(
+            os.path.expanduser(
+                self.get_parameter("maps_directory").value
+            )
         )
 
-        self.slam_mode = self.get_parameter(
-            "slam_mode"
-        ).value
+        self.declare_parameter(
+            "paths_directory",
+            os.path.join(os.path.expanduser("~"), ".ros", "amr_paths"),
+        )
+
+        # Same treatment as maps_directory: paths are written and read back by
+        # name, so a relative default would resolve against whatever CWD the
+        # gateway happened to be launched from.
+        self.paths_directory = os.path.abspath(
+            os.path.expanduser(
+                self.get_parameter("paths_directory").value
+            )
+        )
+
+        # Latest known slam_toolbox mode, refreshed from the node itself (see
+        # _refresh_slam_mode). None until we have actually heard back.
+        self.slam_mode = None
 
         os.makedirs(
             self.maps_directory,
@@ -98,7 +111,7 @@ class CommandGatewayNode(Node):
         os.makedirs(
             self.paths_directory,
             exist_ok=True,
-)
+        )
 
         threading.Thread(
             target=self._run_ws,
@@ -127,6 +140,15 @@ class CommandGatewayNode(Node):
             "/slam_toolbox/deserialize_map",
         )
 
+        # Both slam.launch.py and localization.launch.py name their node
+        # "slam_toolbox", so the node name cannot tell mapping from
+        # localization. The node's own "mode" parameter can: the mapping config
+        # sets online_async, the localization config sets localization.
+        self.slam_mode_client = self.create_client(
+            GetParameters,
+            "/slam_toolbox/get_parameters",
+        )
+
         self.map_sub = self.create_subscription(
             OccupancyGrid,
             "/map",
@@ -152,10 +174,10 @@ class CommandGatewayNode(Node):
             10,
         )
         self.get_logger().info("CommandGatewayNode initialized")
-        self._send_slam_mode()
+        self._refresh_slam_mode()
         self.create_timer(
             2.0,
-            self._send_slam_mode,
+            self._refresh_slam_mode,
         )
    
 
@@ -460,9 +482,21 @@ class CommandGatewayNode(Node):
 
             response = future.result()
 
-            ok = getattr(response, "result", True)
+            # SerializePoseGraph.Response is `uint8 result` with
+            # RESULT_SUCCESS = 0 and RESULT_FAILED_TO_WRITE_FILE = 255. Reading
+            # it as a truthy value inverts the meaning: a successful save
+            # returns 0, which is falsy, so the console showed a failure toast
+            # with an empty error string every time a save actually worked.
+            ok = (
+                response.result
+                == SerializePoseGraph.Response.RESULT_SUCCESS
+            )
 
-            error = ""
+            error = (
+                ""
+                if ok
+                else f"slam_toolbox failed to write the map (result={response.result})"
+            )
 
         except Exception as e:
 
@@ -531,6 +565,15 @@ class CommandGatewayNode(Node):
             map_name,
         )
 
+        # match_type defaults to UNSET(0), which makes the deserialize a no-op:
+        # the pose graph loads but the robot is never placed on it, so "Load"
+        # appeared to succeed and changed nothing. START_AT_FIRST_NODE is the
+        # right choice for reloading a map in mapping mode; localization mode
+        # would want LOCALIZE_AT_POSE with an initial_pose.
+        request.match_type = (
+            DeserializePoseGraph.Request.START_AT_FIRST_NODE
+        )
+
         future = self.deserialize_client.call_async(request)
 
         future.add_done_callback(
@@ -541,10 +584,14 @@ class CommandGatewayNode(Node):
 
         try:
 
-            response = future.result()
+            # Unlike SerializePoseGraph, DeserializePoseGraph.Response carries
+            # no fields at all -- slam_toolbox gives us no success/failure code
+            # for a load. So the only failure we can actually observe is the
+            # call itself raising. (The pre-flight existence check in _load_map
+            # is what catches the common "no such map" case.)
+            future.result()
 
-            ok = getattr(response, "result", True)
-
+            ok = True
             error = ""
 
         except Exception as e:
@@ -613,17 +660,15 @@ class CommandGatewayNode(Node):
         )
     def _save_path(self, name, points):
 
-         if not isinstance(points, list):
+        if not isinstance(points, list):
             self._path_error("Invalid points")
             return
 
-
-         if len(points) == 0 or len(points) > 1000:
+        if len(points) == 0 or len(points) > 1000:
             self._path_error("Invalid point count")
             return
 
-
-         for p in points:
+        for p in points:
 
             if (
                 not isinstance(p, list)
@@ -632,14 +677,26 @@ class CommandGatewayNode(Node):
                 self._path_error("Invalid point format")
                 return
 
+            # Shape alone is not enough: json.dump happily writes NaN and
+            # Infinity, which are not valid JSON, so a poisoned point would
+            # round-trip out of _load_path as a value no consumer can use --
+            # and reach Nav2 as an unreachable goal. The nav_goal branch
+            # already screens for this; match it here.
+            if not all(
+                isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and math.isfinite(v)
+                for v in p
+            ):
+                self._path_error("Invalid point value")
+                return
 
-         filepath = os.path.join(
+        filepath = os.path.join(
             self.paths_directory,
             name + ".json"
         )
 
-
-         with open(filepath, "w") as f:
+        with open(filepath, "w") as f:
 
             json.dump(
                 {
@@ -648,8 +705,7 @@ class CommandGatewayNode(Node):
                 f
             )
 
-
-         asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(
             self.websocket_server.broadcast({
                 "type": "path_op_result",
                 "ok": True,
@@ -773,26 +829,6 @@ class CommandGatewayNode(Node):
             }),
             self.websocket_server.loop,
         )
-    def _map_callback(self, msg):
-
-     self.get_logger().info("MAP RECEIVED")
- 
-     try:
-
-        frame = encode_occupancy_grid(msg)
-        frame["type"] = "map"
-        frame["pose"] = self._latest_pose
-
-        asyncio.run_coroutine_threadsafe(
-            self.websocket_server.broadcast(frame),
-            self.websocket_server.loop,
-        )
-
-     except Exception as e:
-
-        self.get_logger().error(
-            f"Map broadcast failed: {e}"
-        )
     def _odom_callback(self, msg):
 
       pose = msg.pose.pose
@@ -824,7 +860,11 @@ class CommandGatewayNode(Node):
 
     def _map_callback(self, msg):
 
-        self.get_logger().info("MAP RECEIVED")
+        # The websocket thread sets .loop once it is up. Maps can arrive
+        # before that, and run_coroutine_threadsafe(None) raises inside a
+        # subscription callback, so gate on it.
+        if not self.websocket_server.loop:
+            return
 
         try:
 
@@ -832,21 +872,78 @@ class CommandGatewayNode(Node):
             frame["type"] = "map"
             frame["pose"] = self._latest_pose
 
-
             asyncio.run_coroutine_threadsafe(
                 self.websocket_server.broadcast(frame),
                 self.websocket_server.loop,
             )
 
-
         except Exception as e:
 
             self.get_logger().error(
                 f"Map broadcast failed: {e}"
-            )         
-    def _send_slam_mode(self):
+            )
 
-        mode = self.slam_mode.capitalize()
+    # slam_toolbox's "mode" parameter -> what the operator should see.
+    _SLAM_MODE_LABELS = {
+        "online_async": "Mapping",
+        "online_sync": "Mapping",
+        "mapping": "Mapping",
+        "localization": "Localization",
+    }
+
+    def _refresh_slam_mode(self):
+        """Ask slam_toolbox what mode it is in, then broadcast the answer.
+
+        This used to be a hardcoded parameter that nothing ever set, so the
+        console read "Mapping" permanently -- including when no SLAM node was
+        running at all.
+        """
+
+        if not self.slam_mode_client.service_is_ready():
+            # No slam_toolbox up (or not up yet). Say so rather than claiming
+            # a mode we cannot observe.
+            self.slam_mode = None
+            self._broadcast_slam_mode()
+            return
+
+        request = GetParameters.Request()
+        request.names = ["mode"]
+
+        future = self.slam_mode_client.call_async(request)
+        future.add_done_callback(self._slam_mode_done)
+
+    def _slam_mode_done(self, future):
+
+        try:
+            response = future.result()
+
+            if response.values:
+                self.slam_mode = response.values[0].string_value or None
+            else:
+                self.slam_mode = None
+
+        except Exception as e:
+            self.get_logger().warning(
+                f"Could not read slam_toolbox mode: {e}"
+            )
+            self.slam_mode = None
+
+        self._broadcast_slam_mode()
+
+    def _broadcast_slam_mode(self):
+
+        # Fires on a ROS timer that starts before the websocket thread has
+        # published its loop; same guard as _map_callback.
+        if not self.websocket_server.loop:
+            return
+
+        if self.slam_mode is None:
+            mode = "Unknown"
+        else:
+            mode = self._SLAM_MODE_LABELS.get(
+                self.slam_mode,
+                self.slam_mode.capitalize(),
+            )
 
         frame = {
             "type": "slam_mode",

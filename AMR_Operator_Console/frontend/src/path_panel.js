@@ -34,9 +34,6 @@ export function initPathPanel() {
 
     }
 
-
-    refreshPaths();
-
 }
 
 
@@ -67,7 +64,7 @@ function savePath() {
 
 
 
-function refreshPaths(){
+export function refreshPaths(){
 
     sendMessage({
 
