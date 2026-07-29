@@ -1,0 +1,35 @@
+scenarios:
+
+  - name: Straight
+    timeout: 60
+    max_cross_track: 0.20
+    poses:
+      - {x: 0.0, y: 0.0, yaw: 0.0}
+      - {x: 2.0, y: 0.0, yaw: 0.0}
+
+  - name: L Turn
+    timeout: 90
+    max_cross_track: 0.25
+    poses:
+      - {x: 0.0, y: 0.0, yaw: 0.0}
+      - {x: 2.0, y: 0.0, yaw: 0.0}
+      - {x: 2.0, y: 2.0, yaw: 1.5708}
+
+  - name: S Curve
+    timeout: 120
+    max_cross_track: 0.30
+    poses:
+      - {x: 0.0, y: 0.0, yaw: 0.0}
+      - {x: 1.0, y: 0.5, yaw: 0.0}
+      - {x: 2.0, y: -0.5, yaw: 0.0}
+      - {x: 3.0, y: 0.5, yaw: 0.0}
+      - {x: 4.0, y: 0.0, yaw: 0.0}
+
+  - name: Obstacle Clipping
+    timeout: 120
+    max_cross_track: 0.35
+    poses:
+      - {x: 0.0, y: 0.0, yaw: 0.0}
+      - {x: 1.0, y: 0.0, yaw: 0.0}
+      - {x: 2.0, y: 1.0, yaw: 0.7854}
+      - {x: 3.0, y: 1.0, yaw: 0.0}
