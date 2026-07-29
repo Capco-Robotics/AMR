@@ -1,48 +1,209 @@
-"""Robot-wide supervisor: IDLE / NAVIGATING / LIFTING / ERROR state machine.
+"""Robot-wide supervisor state machine."""
 
-Aggregates diagnostics from every subsystem (via DiagnosticsAggregator),
-decides overall robot state, and triggers amr_error on faults.
-"""
 import rclpy
+
 from rclpy.node import Node
+from rclpy.action import ActionClient
+
+from std_msgs.msg import String
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
+
+from amr_msgs.action import MoveLift
+from amr_msgs.msg import LiftState
+from amr_msgs.srv import GetRobotState, AcknowledgeFault
 
 from amr_engine.diagnostics_aggregator import DiagnosticsAggregator
 
-# TODO: from amr_msgs.srv import GetRobotState, AcknowledgeFault
-# TODO: from amr_msgs.action import NavigateToGoal, MoveLift
-# TODO: from rclpy.action import ActionServer, ActionClient
 
-IDLE = 'IDLE'
-NAVIGATING = 'NAVIGATING'
-LIFTING = 'LIFTING'
-ERROR = 'ERROR'
+IDLE = "IDLE"
+NAVIGATING = "NAVIGATING"
+LIFTING = "LIFTING"
+ERROR = "ERROR"
 
 
 class StateMachineNode(Node):
-    def __init__(self):
-        super().__init__('amr_engine')
-        self.diagnostics = DiagnosticsAggregator()
-        self.state = IDLE
-        # TODO: diagnostic_msgs/DiagnosticArray subscribers from each
-        # subsystem, amr_msgs/SignalCommand publisher for fault handoff to
-        # amr_error, state transition logic.
 
-        # TODO: implement callbacks/clients and uncomment
-        # self.create_service(GetRobotState, 'get_robot_state', self._handle_get_robot_state)
-        # self.create_service(AcknowledgeFault, 'acknowledge_fault', self._handle_acknowledge_fault)
-        # self._navigate_server = ActionServer(self, NavigateToGoal, 'navigate_to_goal', self._execute_navigate_to_goal)
-        # self._move_lift_client = ActionClient(self, MoveLift, 'move_lift')
+    def __init__(self):
+        super().__init__("amr_engine")
+
+        self.state = IDLE
+        self.fault_latched = False
+
+        self.diagnostics = DiagnosticsAggregator()
+
+        self.lift_goal_handle = None
+
+        # Publishers
+        self.state_pub = self.create_publisher(
+            String,
+            "/robot_state",
+            10,
+        )
+
+        # Subscribers
+        self.create_subscription(
+            DiagnosticArray,
+            "/diagnostics",
+            self._diagnostics_callback,
+            10,
+        )
+
+        self.create_subscription(
+            LiftState,
+            "/lift_state",
+            self._lift_state_callback,
+            10,
+        )
+
+        # Action Client
+        self.move_lift_client = ActionClient(
+            self,
+            MoveLift,
+            "/move_lift",
+        )
+
+        # Services
+        self.create_service(
+            GetRobotState,
+            "/get_robot_state",
+            self._handle_get_robot_state,
+        )
+
+        self.create_service(
+            AcknowledgeFault,
+            "/acknowledge_fault",
+            self._handle_acknowledge_fault,
+        )
+
+        self.timer = self.create_timer(
+            1.0,
+            self._publish_state,
+        )
+
+        self.get_logger().info("State Machine Node Started")
+
+    def _publish_state(self):
+        msg = String()
+        msg.data = self.state
+        self.state_pub.publish(msg)
+
+    def _diagnostics_callback(self, msg):
+
+        self.diagnostics.update(
+            "diagnostics",
+            msg,
+        )
+
+        if self.diagnostics.has_active_fault():
+            self.state = ERROR
+            self.fault_latched = True
+
+    def _lift_state_callback(self, msg):
+
+        if self.state == LIFTING:
+            if abs(msg.position) < 0.01:
+                pass
+
+        if self.diagnostics.has_active_fault():
+            self.state = ERROR
+            self.fault_latched = True
+
+    def send_lift_goal(self, target):
+
+        if self.fault_latched:
+            self.get_logger().warn(
+                "Cannot lift, robot in ERROR state"
+            )
+            return
+
+        if not self.move_lift_client.wait_for_server(
+            timeout_sec=2.0
+        ):
+            self.get_logger().error(
+                "MoveLift action server not available"
+            )
+            return
+
+        goal = MoveLift.Goal()
+        goal.target_position = target
+
+        self.state = LIFTING
+
+        future = self.move_lift_client.send_goal_async(
+            goal,
+        )
+
+        future.add_done_callback(
+            self._lift_goal_response_callback
+        )
+
+    def _lift_goal_response_callback(self, future):
+
+        self.lift_goal_handle = future.result()
+
+        if not self.lift_goal_handle.accepted:
+            self.state = ERROR
+            self.fault_latched = True
+            return
+
+        result_future = (
+            self.lift_goal_handle.get_result_async()
+        )
+
+        result_future.add_done_callback(
+            self._lift_result_callback
+        )
+
+    def _lift_result_callback(self, future):
+
+        result = future.result().result
+
+        if result.success:
+            self.state = IDLE
+        else:
+            self.state = ERROR
+            self.fault_latched = True
+
+    def _handle_get_robot_state(
+        self,
+        request,
+        response,
+    ):
+        response.state = self.state
+
+        response.active_faults = list(
+            self.diagnostics._latest_by_source.keys()
+        )
+
+        return response
+
+    def _handle_acknowledge_fault(
+        self,
+        request,
+        response,
+    ):
+
+        self.fault_latched = False
+        self.state = IDLE
+
+        response.success = True
+
+        return response
 
 
 def main(args=None):
+
     rclpy.init(args=args)
+
     node = StateMachineNode()
+
     try:
         rclpy.spin(node)
+
     finally:
         node.destroy_node()
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -15,10 +15,12 @@ def generate_launch_description():
     rviz = LaunchConfiguration("rviz")
     nav = LaunchConfiguration("nav")
     scan_topic = LaunchConfiguration("scan_topic")
+    lift = LaunchConfiguration("lift")
 
     map_pkg = get_package_share_directory("amr_navigation_map")
     lidar_pkg = get_package_share_directory("amr_navigation_lidar")
     description_pkg = get_package_share_directory("amr_description")
+    lift_pkg = get_package_share_directory("amr_lift")
 
     description_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -51,6 +53,17 @@ def generate_launch_description():
                 "slam.launch.py",
             )
         )
+    )
+
+    lift_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                lift_pkg,
+                "launch",
+                "lift_sim.launch.py",
+            )
+        ),
+        condition=IfCondition(lift),
     )
 
     nav_launch = IncludeLaunchDescription(
@@ -89,6 +102,11 @@ def generate_launch_description():
             default_value="/scan",
         ),
 
+        DeclareLaunchArgument(
+            "lift",
+            default_value="false",
+        ),
+
         description_launch,
 
         Node(
@@ -121,9 +139,17 @@ def generate_launch_description():
             ],
         ),
 
+        Node(
+            package="amr_engine",
+            executable="state_machine_node",
+            name="state_machine_node",
+            output="screen",
+        ),
+
         lidar_launch,
         slam_launch,
         nav_launch,
+        lift_launch,
 
         Node(
             package="rviz2",

@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'amr_engine = amr_engine.amr_engine:main',
+            'state_machine_node = amr_engine.state_machine_node:main',
         ],
     },
 )
