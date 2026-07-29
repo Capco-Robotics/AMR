@@ -36,19 +36,25 @@
 
         <div class="toolbar" role="toolbar" aria-label="Map tools">
 
+          <!-- Two labels per tool: the full wording explains itself on a
+               laptop, the short one keeps all three tools on one row on a
+               phone instead of wrapping the toolbar to two. -->
           <button id="goal-toggle" class="btn btn-tool" type="button">
             <span class="swatch swatch-goal" aria-hidden="true"></span>
-            Set Goal
+            <span class="label-full">Set Goal</span>
+            <span class="label-short">Goal</span>
           </button>
 
           <button id="draw-toggle" class="btn btn-tool" type="button">
             <span class="swatch swatch-path" aria-hidden="true"></span>
-            Draw Path
+            <span class="label-full">Draw Path</span>
+            <span class="label-short">Path</span>
           </button>
 
           <button id="zone-toggle" class="btn btn-tool" type="button">
             <span class="swatch swatch-zone" aria-hidden="true"></span>
-            Draw Keep-out Zone
+            <span class="label-full">Draw Keep-out Zone</span>
+            <span class="label-short">Zone</span>
           </button>
 
         </div>
@@ -105,9 +111,13 @@
 
     <aside class="sidebar">
 
-      <section class="card">
+      <!-- Panels are <details> so a phone can fold away what it is not using;
+           panels.js collapses the non-essential ones on a narrow screen at
+           first load. Path Execution stays open -- it is the one thing an
+           operator watching a run needs visible. -->
+      <details class="card" open data-keep-open>
 
-        <h2>Path Execution</h2>
+        <summary>Path Execution</summary>
 
         <div class="status-row">
           <span class="status-label">Status</span>
@@ -117,14 +127,14 @@
         <div id="status-panel" class="readout"></div>
         <div id="battery-panel" class="readout"></div>
 
-      </section>
+      </details>
 
-      <section class="card" id="zone-panel">
+      <details class="card" id="zone-panel" open>
 
-        <h2>
+        <summary>
           Keep-out Zones
           <span id="zone-count" class="badge">0 zones</span>
-        </h2>
+        </summary>
 
         <p class="help">
           Areas the AMR will not enter. Trace one with the
@@ -164,11 +174,11 @@
 
         <div id="zone-list" class="list"></div>
 
-      </section>
+      </details>
 
-      <section class="card" id="map-panel">
+      <details class="card" id="map-panel" open>
 
-        <h2>Map Manager</h2>
+        <summary>Map Manager</summary>
 
         <div class="field-row">
 
@@ -195,11 +205,11 @@
 
         <div id="map-list" class="list"></div>
 
-      </section>
+      </details>
 
-      <section class="card" id="path-panel">
+      <details class="card" id="path-panel" open>
 
-        <h2>Path Manager</h2>
+        <summary>Path Manager</summary>
 
         <div class="field-row">
 
@@ -226,11 +236,11 @@
 
         <div id="path-list" class="list"></div>
 
-      </section>
+      </details>
 
-      <section class="card">
+      <details class="card" open>
 
-        <h2>Manual Drive</h2>
+        <summary>Manual Drive</summary>
 
         <p class="help">Hold a button, or use W / A / S / D.</p>
 
@@ -247,7 +257,7 @@
 
         </div>
 
-      </section>
+      </details>
 
     </aside>
 

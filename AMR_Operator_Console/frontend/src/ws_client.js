@@ -28,6 +28,7 @@ import {
 } from "./zone_panel.js";
 import { initZoneDraw } from "./zone_draw.js";
 import { initModeToolbar } from "./mode_toolbar.js";
+import { initPanels } from "./panels.js";
 import { renderMap, updatePlan } from "./map_renderer.js";
 
 
@@ -219,6 +220,7 @@ initPathDraw();
 initZonePanel();
 initZoneDraw();
 initModeToolbar();
+initPanels();
 
 openSocket();
 

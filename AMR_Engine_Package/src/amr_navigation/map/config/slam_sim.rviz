@@ -62,6 +62,19 @@ Visualization Manager:
       Topic:
         Value: /goal_pose
 
+    # Operator-drawn keep-out zones, as amr_command publishes them to Nav2's
+    # KeepoutFilter. The topic is latched (transient_local), so this has to
+    # match or the display stays empty until the next zone edit.
+    - Class: rviz_default_plugins/Map
+      Name: Keep-out Zones
+      Enabled: true
+      Topic:
+        Value: /keepout_filter_mask
+        Durability Policy: Transient Local
+      Color Scheme: costmap
+      Alpha: 0.6
+      Draw Behind: false
+
   Tools:
     - Class: rviz_default_plugins/Interact
     - Class: rviz_default_plugins/MoveCamera
