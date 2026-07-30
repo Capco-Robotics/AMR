@@ -26,21 +26,4 @@ def encode(message: dict) -> bytes:
 
 
 def decode(line: bytes) -> dict:
-    message = json.loads(line.decode("utf-8").strip())
-
-    if not isinstance(message, dict):
-        raise ValueError("Frame must be a JSON object")
-
-    if "type" not in message:
-        raise ValueError("Missing 'type' field")
-
-    if "seq" not in message:
-        raise ValueError("Missing 'seq' field")
-
-    if not isinstance(message["type"], str):
-        raise ValueError("'type' must be a string")
-
-    if not isinstance(message["seq"], int):
-        raise ValueError("'seq' must be an integer")
-
-    return message
+    return json.loads(line.decode('utf-8').strip())
