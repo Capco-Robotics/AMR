@@ -181,9 +181,28 @@ class CommandGatewayNode(Node):
         # wall does not flood the socket.
         self._last_block_notice = 0.0
 
+        # How far a drawn path must stay from a wall. Under the footprint's
+        # 0.4 m inscribed radius on purpose: at a full 0.4 m the check refuses
+        # perfectly drivable paths down a narrow aisle, and Nav2's own
+        # costmap is the thing that ultimately keeps the robot off the wall.
+        # This check exists to catch the grossly-through-a-wall case early.
+        self.declare_parameter("obstacle_margin", 0.30)
+
+        self.obstacle_margin = float(
+            self.get_parameter("obstacle_margin").value
+        )
+
         # Geometry of the most recent /map, so a zone edit can be rasterised
         # onto the same grid without waiting for the next map update.
         self._latest_map_info = None
+
+        # Occupancy of the most recent /map, plus the inflated obstacle mask
+        # derived from it. The mask is built lazily on the first path check
+        # after a map arrives rather than on every update: maps arrive every
+        # couple of seconds whether or not anyone is drawing a path, and
+        # inflating a large grid is not free.
+        self._latest_map_data = None
+        self._obstacle_mask = None
 
         # Latest known slam_toolbox mode, refreshed from the node itself (see
         # _refresh_slam_mode). None until we have actually heard back.
@@ -432,6 +451,30 @@ class CommandGatewayNode(Node):
                         "state": "rejected",
                         "message": message,
                         "zones": violated,
+                    })
+
+                    return
+
+                # Same reasoning as the zone check: NavigateThroughPoses
+                # treats these as goal poses, and one inside a wall is
+                # unreachable, so the run would be accepted and then abort
+                # partway with nothing the operator can act on.
+                hit = self._path_hits_obstacle(points)
+
+                if hit is not None:
+
+                    message = (
+                        "Path runs into an obstacle near "
+                        f"({hit[0]:.2f}, {hit[1]:.2f})"
+                    )
+
+                    self.get_logger().warning(f"Rejected nav_path: {message}")
+
+                    self._broadcast({
+                        "type": "path_status",
+                        "state": "rejected",
+                        "message": message,
+                        "obstacle": [round(hit[0], 3), round(hit[1], 3)],
                     })
 
                     return
@@ -1091,6 +1134,95 @@ class CommandGatewayNode(Node):
             f"margin {self.zone_margin:.2f} m)"
         )
 
+    # ---- obstacles ------------------------------------------------------
+
+    def _ensure_obstacle_mask(self):
+        """Build the inflated obstacle mask if the map has changed."""
+
+        if self._obstacle_mask is not None:
+            return self._obstacle_mask
+
+        if self._latest_map_info is None or self._latest_map_data is None:
+            return None
+
+        info = self._latest_map_info
+
+        try:
+            self._obstacle_mask = keepout_zones.inflate_occupancy(
+                self._latest_map_data,
+                info.width,
+                info.height,
+                info.resolution,
+                self.obstacle_margin,
+            )
+        except Exception as e:
+            self.get_logger().error(f"Obstacle mask build failed: {e}")
+            return None
+
+        return self._obstacle_mask
+
+    def _path_hits_obstacle(self, points):
+        """First world point where the path runs into a wall, else None.
+
+        Sampled along each segment rather than at the waypoints: the operator
+        draws a thinned path, so two legal waypoints can sit either side of a
+        wall with the straight line between them going through it.
+        """
+
+        mask = self._ensure_obstacle_mask()
+
+        if mask is None:
+            # No map yet. Nav2 cannot plan without one either, so let the
+            # path through and let the planner produce the real complaint.
+            return None
+
+        info = self._latest_map_info
+
+        resolution = info.resolution
+        origin_x = info.origin.position.x
+        origin_y = info.origin.position.y
+
+        def blocked(x, y):
+
+            col = int((x - origin_x) / resolution)
+            row = int((y - origin_y) / resolution)
+
+            if col < 0 or col >= info.width:
+                return False
+            if row < 0 or row >= info.height:
+                return False
+
+            return mask[row * info.width + col] == 1
+
+        # Half a cell, so no sample can step over a one-cell wall.
+        step = resolution / 2.0
+
+        for i in range(len(points)):
+
+            x0, y0 = points[i][0], points[i][1]
+
+            if blocked(x0, y0):
+                return (x0, y0)
+
+            if i + 1 >= len(points):
+                break
+
+            x1, y1 = points[i + 1][0], points[i + 1][1]
+
+            length = math.hypot(x1 - x0, y1 - y0)
+
+            for s in range(1, int(length / step) + 1):
+
+                t = (s * step) / length
+
+                x = x0 + (x1 - x0) * t
+                y = y0 + (y1 - y0) * t
+
+                if blocked(x, y):
+                    return (x, y)
+
+        return None
+
     def _broadcast_zones(self):
 
         self._broadcast({
@@ -1199,6 +1331,11 @@ class CommandGatewayNode(Node):
         previous = self._map_geometry(self._latest_map_info)
 
         self._latest_map_info = msg.info
+        self._latest_map_data = msg.data
+
+        # Every map update invalidates the inflated obstacle mask; it is
+        # rebuilt on the next path check rather than here.
+        self._obstacle_mask = None
 
         if previous != self._map_geometry(msg.info):
             self._publish_zone_mask()

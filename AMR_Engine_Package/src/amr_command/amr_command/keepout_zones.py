@@ -227,6 +227,37 @@ def _dilate(mask, width, height, radius_cells):
     return result
 
 
+def inflate_occupancy(data, width, height, resolution, margin_m,
+                      occupied_threshold=50):
+    """Occupied cells of an OccupancyGrid, grown by `margin_m`.
+
+    Used to refuse an operator-drawn path that runs through a wall. The
+    growth matters as much as the walls do: the robot is not a point, so a
+    waypoint 10 cm from a wall is not reachable even though its own cell is
+    free.
+
+    Unknown cells (-1) are deliberately *not* treated as obstacles. A path
+    drawn across not-yet-explored floor is a normal thing to want, and
+    refusing it would make the feature useless on a partial map.
+    """
+
+    mask = bytearray(width * height)
+
+    for i, cell in enumerate(data):
+        if cell >= occupied_threshold:
+            mask[i] = 1
+
+    if margin_m > 0.0 and resolution > 0.0:
+        mask = _dilate(
+            mask,
+            width,
+            height,
+            int(math.ceil(margin_m / resolution)),
+        )
+
+    return mask
+
+
 def rasterise(polygons, width, height, resolution, origin_x, origin_y,
               margin_m=0.0):
     """Render zone polygons into OccupancyGrid `data`, bottom-up row-major.

@@ -244,6 +244,32 @@ other cannot:
   and one dropped inside a zone is unreachable, so without this the run is
   accepted and then aborts partway.
 
+## Paths through walls *(implemented)*
+
+The same reasoning applies to the map's own obstacles, so `nav_path` is also
+refused when it runs into one:
+
+```json
+{"type": "path_status", "state": "rejected",
+ "message": "Path runs into an obstacle near (-5.09, -1.10)",
+ "obstacle": [-5.09, -1.10]}
+```
+
+Checked against the occupied cells of the latest `/map`, grown by
+`obstacle_margin` (default 0.30 m) because the robot is not a point. Sampling
+is along each segment at half a cell, not just at the waypoints: a thinned
+path can have two legal waypoints either side of a wall.
+
+Unknown cells are **not** obstacles — drawing across unexplored floor is a
+normal thing to want, and treating it as blocked would make the check useless
+on a partial map. The margin is deliberately under the footprint's 0.4 m
+inscribed radius, so a legitimate path down a narrow aisle is not refused;
+Nav2's costmap remains what actually keeps the robot off the wall.
+
+The console additionally colours the stroke red while it is being drawn over
+a wall. That check is advisory only — no inflation, coarser sampling — and
+the gateway re-checks before anything is driven.
+
 The mask is aligned to the geometry of the latest `/map`, and is republished
 whenever the map's size, resolution or origin changes.
 

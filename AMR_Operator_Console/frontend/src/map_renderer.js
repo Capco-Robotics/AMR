@@ -33,6 +33,7 @@ const COLOURS = {
     zoneDraftFill: "rgba(239, 68, 68, 0.12)",
     goal: "#16a34a",
     robot: "#1f2937",
+    blocked: "#dc2626",
 };
 
 let latestMapFrame = null;
@@ -41,6 +42,14 @@ let latestMapFrame = null;
 // Rebuilt only when a new map arrives, not on every repaint.
 let wallRuns = [];
 let freeRuns = [];
+
+// Denoised occupancy as one cell per entry, kept so the console can warn
+// about a path crossing a wall while it is still being drawn. The gateway
+// re-checks against the real map before anything is driven -- this is the
+// fast advisory copy, not the authority.
+let occupancy = null;
+let occupancyWidth = 0;
+let occupancyHeight = 0;
 
 let goalMarker = null;
 let planPoints = [];
@@ -243,47 +252,168 @@ function extractRuns(image, width, height) {
 
     const data = decoderCtx.getImageData(0, 0, width, height).data;
 
-    const walls = [];
-    const free = [];
+    // map_encoder walks the OccupancyGrid's data array in order and writes
+    // PNG rows in that same order, so PNG row N *is* grid row N. There is no
+    // flip to undo here -- paintRuns already puts grid row 0 at the bottom of
+    // the canvas, which is where world -y belongs. Reading (height-1-row)
+    // here as well double-flipped it and mirrored the whole map vertically
+    // against RViz.
+    const wall = new Uint8Array(width * height);
+    const free = new Uint8Array(width * height);
+
+    for (let i = 0; i < width * height; i += 1) {
+        const value = data[i * 4];
+        if (value <= OCCUPIED_MAX) wall[i] = 1;
+        else if (value >= FREE_MIN) free[i] = 1;
+    }
+
+    denoise(wall, width, height);
+
+    occupancy = wall;
+    occupancyWidth = width;
+    occupancyHeight = height;
+
+    wallRuns = runsOf(wall, width, height);
+    freeRuns = runsOf(free, width, height);
+}
+
+/**
+ * Drop isolated occupied cells.
+ *
+ * A live SLAM map is speckled with one-cell hits from scan noise and from
+ * cells only ever seen at a glancing angle. Painted as-is they read as grit
+ * scattered around every wall -- the "jittery pixels" that made the map look
+ * unfinished. A cell with almost no occupied neighbours is not a wall, so it
+ * is not drawn as one. Two neighbours is enough to keep genuine thin walls
+ * and corners, which always have a neighbour along their length.
+ */
+function denoise(cells, width, height) {
+
+    const keep = new Uint8Array(cells);
 
     for (let row = 0; row < height; row += 1) {
+        for (let col = 0; col < width; col += 1) {
 
-        // The encoder ships OccupancyGrid rows bottom-up, and PNG row 0 is
-        // the top, so image row (height-1-row) is grid row `row`.
-        const imageRow = height - 1 - row;
+            const i = row * width + col;
 
-        let wallFrom = -1;
-        let freeFrom = -1;
-
-        for (let col = 0; col <= width; col += 1) {
-
-            let isWall = false;
-            let isFree = false;
-
-            if (col < width) {
-                const value = data[(imageRow * width + col) * 4];
-                isWall = value <= OCCUPIED_MAX;
-                isFree = value >= FREE_MIN;
+            if (!cells[i]) {
+                continue;
             }
 
-            if (isWall) {
-                if (wallFrom < 0) wallFrom = col;
-            } else if (wallFrom >= 0) {
-                walls.push({ row, from: wallFrom, to: col });
-                wallFrom = -1;
+            let neighbours = 0;
+
+            for (let dy = -1; dy <= 1; dy += 1) {
+                for (let dx = -1; dx <= 1; dx += 1) {
+
+                    if (dx === 0 && dy === 0) continue;
+
+                    const y = row + dy;
+                    const x = col + dx;
+
+                    if (y < 0 || y >= height || x < 0 || x >= width) continue;
+
+                    neighbours += cells[y * width + x];
+                }
             }
 
-            if (isFree) {
-                if (freeFrom < 0) freeFrom = col;
-            } else if (freeFrom >= 0) {
-                free.push({ row, from: freeFrom, to: col });
-                freeFrom = -1;
+            if (neighbours < 2) {
+                keep[i] = 0;
             }
         }
     }
 
-    wallRuns = walls;
-    freeRuns = free;
+    cells.set(keep);
+}
+
+/** Merge horizontally adjacent set cells into {row, from, to} spans. */
+function runsOf(cells, width, height) {
+
+    const runs = [];
+
+    for (let row = 0; row < height; row += 1) {
+
+        let from = -1;
+
+        for (let col = 0; col <= width; col += 1) {
+
+            const set = col < width && cells[row * width + col];
+
+            if (set) {
+                if (from < 0) from = col;
+            } else if (from >= 0) {
+                runs.push({ row, from, to: col });
+                from = -1;
+            }
+        }
+    }
+
+    return runs;
+}
+
+/**
+ * True when any part of the stroke lies on a wall.
+ *
+ * Advisory only, and deliberately cheaper and looser than the gateway's
+ * check: no inflation, and sampled at one cell rather than half. It exists to
+ * colour the line while the operator drags, not to decide anything. The
+ * gateway re-checks against the real map with the robot's clearance before
+ * any of it is driven.
+ */
+export function strokeCrossesWall(points) {
+
+    if (!occupancy || !points || points.length === 0) {
+        return false;
+    }
+
+    const step = latestMapFrame.resolution;
+
+    for (let i = 0; i < points.length; i += 1) {
+
+        if (isOccupiedAt(points[i][0], points[i][1])) {
+            return true;
+        }
+
+        if (i + 1 >= points.length) {
+            break;
+        }
+
+        const [x0, y0] = points[i];
+        const [x1, y1] = points[i + 1];
+
+        const length = Math.hypot(x1 - x0, y1 - y0);
+        const steps = Math.floor(length / step);
+
+        for (let s = 1; s <= steps; s += 1) {
+
+            const t = (s * step) / length;
+
+            if (isOccupiedAt(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/** True when world (x, y) falls on an occupied cell. */
+export function isOccupiedAt(worldX, worldY) {
+
+    if (!occupancy || !latestMapFrame) {
+        return false;
+    }
+
+    const col = Math.floor(
+        (worldX - latestMapFrame.origin.x) / latestMapFrame.resolution
+    );
+    const row = Math.floor(
+        (worldY - latestMapFrame.origin.y) / latestMapFrame.resolution
+    );
+
+    if (col < 0 || col >= occupancyWidth) return false;
+    if (row < 0 || row >= occupancyHeight) return false;
+
+    return occupancy[row * occupancyWidth + col] === 1;
 }
 
 export function renderMap(mapFrame) {
@@ -377,7 +507,14 @@ function repaint() {
 
     strokePolyline(previewPath, COLOURS.preview, 3 * dpr, [8 * dpr, 5 * dpr]);
     strokePolyline(planPoints, COLOURS.plan, 3 * dpr);
-    strokePolyline(drawStroke, COLOURS.stroke, 3 * dpr);
+
+    // Colour the operator's own stroke by whether it is drivable, so the
+    // problem is visible while drawing rather than only on refusal.
+    strokePolyline(
+        drawStroke,
+        strokeCrossesWall(drawStroke) ? COLOURS.blocked : COLOURS.stroke,
+        3 * dpr,
+    );
 
     if (goalMarker) {
 
