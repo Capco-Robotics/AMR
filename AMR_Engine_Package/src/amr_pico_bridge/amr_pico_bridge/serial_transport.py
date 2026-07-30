@@ -15,7 +15,8 @@ import threading
 from typing import List, Optional
 
 import serial
-
+import json
+from amr_pico_bridge import protocol_codec
 logger = logging.getLogger(__name__)
 
 _RX_QUEUE_MAXSIZE = 1000
@@ -122,5 +123,57 @@ class SerialTransport:
                 lines.append(self._rx_queue.get_nowait())
             except queue.Empty:
                 break
+
+        return lines
+class LoopbackTransport:
+    def __init__(self):
+        self._rx_queue = queue.Queue()
+        self._last_error = None
+
+    @property
+    def connected(self):
+        return True
+
+    @property
+    def last_error(self):
+        return self._last_error
+
+    def open(self):
+        pass
+
+    def close(self):
+        pass
+
+    def write(self, data: bytes):
+        message = protocol_codec.decode(data)
+
+        if message["type"] == protocol_codec.CMD_LIFT:
+ 
+            response = {
+                "type": protocol_codec.TEL_LIFT_STATE,
+                "seq": message["seq"],
+                "position": message["target_position"],
+                "actuator_position": [
+                    message["target_position"],
+                    message["target_position"],
+                ],
+                "actuator_current": [0.0, 0.0],
+                "limit_upper": False,
+                "limit_lower": False,
+                "level_fault": False,
+         }
+
+            self._rx_queue.put(protocol_codec.encode(response))
+
+        else:
+            self._rx_queue.put(data)
+    def read_line(self):
+        return self._rx_queue.get()
+
+    def poll_lines(self):
+        lines = []
+
+        while not self._rx_queue.empty():
+            lines.append(self._rx_queue.get())
 
         return lines

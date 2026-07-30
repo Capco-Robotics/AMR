@@ -11,19 +11,11 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from amr_msgs.msg import (
-    WheelSetpoints,
-    EncoderTicks,
-    PicoStatus,
-    LiftCommand,
-    LiftState,
-)
+from amr_msgs.msg import WheelSetpoints, EncoderTicks, PicoStatus
 
 from amr_pico_bridge import protocol_codec
-from amr_pico_bridge.serial_transport import (
-    SerialTransport,
-    LoopbackTransport,
-)
+from amr_pico_bridge.serial_transport import SerialTransport
+
 # TODO: from amr_msgs.srv import GetPicoStatus, TriggerEstop
 
 
@@ -33,16 +25,12 @@ class PicoBridgeNode(Node):
 
         self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('baudrate', 115200)
-        self.declare_parameter('transport', 'serial')
-        transport_type = self.get_parameter('transport').value
 
-        if transport_type == "loopback":
-           self.transport = LoopbackTransport()
-        else:
-           self.transport = SerialTransport(
-               self.get_parameter("serial_port").value,
-               self.get_parameter("baudrate").value,
-           )
+        self.transport = SerialTransport(
+            self.get_parameter('serial_port').value,
+            self.get_parameter('baudrate').value,
+        )
+
         self.transport.open()
 
         self._seq = 0
@@ -60,11 +48,6 @@ class PicoBridgeNode(Node):
             "/pico_status",
             10,
         )
-        self.lift_state_pub = self.create_publisher(
-            LiftState,
-            "/lift_state",
-            10,
-        )
 
         self.create_subscription(
             WheelSetpoints,
@@ -72,12 +55,7 @@ class PicoBridgeNode(Node):
             self._on_wheel_setpoints,
             10,
         )
-        self.create_subscription(
-            LiftCommand,
-            "/lift_command",
-            self._on_lift_command,
-            10,
-        )
+
         self.heartbeat_timer = self.create_timer(
             0.1,
             self._send_heartbeat,
@@ -100,17 +78,7 @@ class PicoBridgeNode(Node):
         }
 
         self.transport.write(protocol_codec.encode(message))
-    def _on_lift_command(self, msg: LiftCommand):
-        self._seq += 1
 
-        message = {
-            "type": protocol_codec.CMD_LIFT,
-            "seq": self._seq,
-            "ts": time.time(),
-            "target_position": msg.target_position,
-        }
-
-        self.transport.write(protocol_codec.encode(message))
     def _send_heartbeat(self):
         if not self.transport.connected:
             if self._link_connected:
@@ -186,41 +154,8 @@ class PicoBridgeNode(Node):
             msg.right_ticks = message["right_ticks"]
             msg.dt_ms = message["dt_ms"]
 
-            self.encoder_pub.publish(msg) 
-        elif msg_type == protocol_codec.TEL_LIFT_STATE:
+            self.encoder_pub.publish(msg)
 
-            required = (
-                "position",
-                "actuator_position",
-                "actuator_current",
-                "limit_upper",
-                "limit_lower",
-                "level_fault",
-            )
-
-            missing = [
-                field
-                for field in required
-                if field not in message
-            ]
-
-            if missing:
-                self.get_logger().warning(
-                    f"Lift telemetry missing fields: {missing}. "
-                    f"Message: {message}"
-                )
-                return
-
-            msg = LiftState()
-
-            msg.position = float(message["position"])
-            msg.actuator_position = message["actuator_position"]
-            msg.actuator_current = message["actuator_current"]
-            msg.limit_upper = bool(message["limit_upper"])
-            msg.limit_lower = bool(message["limit_lower"])
-            msg.level_fault = bool(message["level_fault"])
-
-            self.lift_state_pub.publish(msg)
         elif msg_type == protocol_codec.TEL_PICO_STATUS:
 
             msg = PicoStatus()
