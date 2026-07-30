@@ -3,10 +3,39 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import (
+    get_package_prefix,
+    get_package_share_directory,
+)
 from launch_ros.actions import Node
 
 import os
+
+
+def rosidl_env():
+    """Loader path every node that imports amr_msgs needs, on macOS.
+
+    amr_msgs' Python typesupport extension finds its sibling
+    libamr_msgs__rosidl_generator_py.dylib through @rpath, which resolves
+    against DYLD_LIBRARY_PATH. macOS drops DYLD_* variables across the way
+    launch_ros spawns a Node -- ExecuteProcess and `ros2 run` keep them, which
+    is why the same node runs by hand and dies under `ros2 launch` -- and the
+    loader then searches only the conda prefix, where that dylib does not
+    exist. Every amr_msgs-using node died on import with
+
+        UnsupportedTypeSupport: Could not import 'rosidl_typesupport_c'
+
+    Re-asserting the variable for the child restores it. Harmless on Linux,
+    where DYLD_LIBRARY_PATH is simply ignored.
+    """
+
+    lib = os.path.join(get_package_prefix("amr_msgs"), "lib")
+
+    return {
+        "DYLD_LIBRARY_PATH": os.pathsep.join(
+            [lib, os.environ.get("DYLD_LIBRARY_PATH", "")]
+        )
+    }
 
 
 def generate_launch_description():
@@ -107,13 +136,30 @@ def generate_launch_description():
             default_value="false",
         ),
 
+        DeclareLaunchArgument(
+            "gateway",
+            default_value="false",
+            description="Also start amr_command's operator-console gateway.",
+        ),
+
         description_launch,
+
+        # Off by default so this file keeps behaving as it did for anyone
+        # already using it; demo.launch.py turns it on.
+        Node(
+            package="amr_command",
+            executable="command_gateway_node",
+            name="amr_command",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("gateway")),
+        ),
 
         Node(
             package="amr_navigation_move",
             executable="fake_pico_node",
             name="fake_pico_node",
             output="screen",
+            additional_env=rosidl_env(),
             parameters=[
                 {"use_sim_time": False}
             ],
@@ -124,6 +170,7 @@ def generate_launch_description():
             executable="drive_controller_node",
             name="drive_controller_node",
             output="screen",
+            additional_env=rosidl_env(),
             parameters=[
                 {"use_sim_time": False}
             ],
@@ -134,6 +181,7 @@ def generate_launch_description():
             executable="odometry_node",
             name="odometry_node",
             output="screen",
+            additional_env=rosidl_env(),
             parameters=[
                 {"use_sim_time": False}
             ],
@@ -144,6 +192,7 @@ def generate_launch_description():
             executable="state_machine_node",
             name="state_machine_node",
             output="screen",
+            additional_env=rosidl_env(),
         ),
 
         lidar_launch,
