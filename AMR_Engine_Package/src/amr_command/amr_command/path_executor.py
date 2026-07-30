@@ -53,6 +53,17 @@ class PathExecutor:
         self._goal_handle = None
         self._last_feedback_time = 0.0
 
+        # The waypoints the running goal was sent with. The gateway re-checks
+        # these against the robot's position while a run is in progress and
+        # re-sends what is left once the robot has driven past one, so the
+        # route Nav2 is holding never doubles back through the robot -- see
+        # path_geometry.drop_points_behind().
+        self._points = None
+
+        # Whether the goal currently in flight is one the operator asked for,
+        # and so whether its acceptance is worth a console frame.
+        self._announce = True
+
         # Every goal gets a number, and its callbacks carry that number.
         #
         # Superseding a path leaves the old goal's result callback still in
@@ -78,11 +89,28 @@ class PathExecutor:
 
         self._status_callback(frame)
 
-    def send_path(self, waypoints):
+    def active_points(self):
+        """Waypoints of the run in progress, or None if nothing is running.
+
+        Only reported once Nav2 has accepted the goal: re-sending during the
+        window before that would race the acceptance it is waiting on.
+        """
+
+        if self._goal_handle is None:
+            return None
+
+        return self._points
+
+    def send_path(self, waypoints, announce=True):
         """Send validated [x, y, theta] waypoints to Nav2.
 
         Returns True if the goal was handed to the action client. The real
         outcome arrives later as path_status frames.
+
+        `announce=False` keeps the accept/supersede chatter off the console.
+        It is for re-sending the tail of a route that is already running, which
+        the operator did not ask for and should not see as a new run -- the
+        executing/succeeded frames still arrive as usual.
         """
 
         # Non-blocking. The original wait_for_server(timeout_sec=5.0) ran on
@@ -101,7 +129,10 @@ class PathExecutor:
         # A second path while one is running would otherwise leave the first
         # goal handle orphaned and uncancellable.
         if self._goal_handle is not None or self._pending:
-            self.cancel_path(reason="Superseded by a new path")
+            self.cancel_path(
+                reason="Superseded by a new path",
+                announce=announce,
+            )
 
         # Past this point the old goal's callbacks are stale and will be
         # ignored, so they cannot clear the handle this new goal is about to
@@ -111,6 +142,8 @@ class PathExecutor:
 
         self._goal_handle = None
         self._pending = True
+        self._points = list(waypoints)
+        self._announce = announce
 
         goal = NavigateThroughPoses.Goal()
 
@@ -160,11 +193,12 @@ class PathExecutor:
             f"Sent path with {len(goal.poses)} poses"
         )
 
-        self._status(
-            "sent",
-            f"Sent {len(goal.poses)} waypoints to Nav2",
-            poses=len(goal.poses),
-        )
+        if announce:
+            self._status(
+                "sent",
+                f"Sent {len(goal.poses)} waypoints to Nav2",
+                poses=len(goal.poses),
+            )
 
         return True
 
@@ -212,7 +246,9 @@ class PathExecutor:
         self._goal_handle = goal_handle
 
         self._node.get_logger().info("Path goal accepted")
-        self._status("accepted", "Nav2 accepted the path")
+
+        if self._announce:
+            self._status("accepted", "Nav2 accepted the path")
 
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
@@ -253,6 +289,7 @@ class PathExecutor:
 
         self._goal_handle = None
         self._pending = False
+        self._points = None
 
         try:
             response = future.result()
@@ -276,12 +313,15 @@ class PathExecutor:
 
         self._status(state, message)
 
-    def cancel_path(self, reason="Cancel requested by operator"):
+    def cancel_path(self, reason="Cancel requested by operator", announce=True):
 
         if self._goal_handle is None:
 
             if not self._pending:
-                self._status("idle", "No path is running")
+
+                if announce:
+                    self._status("idle", "No path is running")
+
                 return False
 
             # Sent but not yet accepted. Retiring the generation makes the
@@ -294,13 +334,16 @@ class PathExecutor:
                 "Navigation cancel requested before the goal was accepted"
             )
 
-            self._status("canceling", reason)
+            if announce:
+                self._status("canceling", reason)
 
             return True
 
         self._goal_handle.cancel_goal_async()
 
         self._node.get_logger().info("Navigation cancel requested")
-        self._status("canceling", reason)
+
+        if announce:
+            self._status("canceling", reason)
 
         return True

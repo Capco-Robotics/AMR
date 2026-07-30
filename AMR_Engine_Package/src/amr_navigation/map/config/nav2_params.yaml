@@ -66,7 +66,16 @@ controller_server:
       angular_granularity: 0.025
       transform_tolerance: 0.2
 
-      xy_goal_tolerance: 0.20
+      # Must match general_goal_checker's xy_goal_tolerance above, not exceed
+      # it. This is what DWB's RotateToGoal critic calls "at the goal": inside
+      # it, every trajectory that translates faster than
+      # trans_stopped_velocity is thrown out as illegal, because the only
+      # thing left to do is turn to the goal heading. At 0.20 against the goal
+      # checker's 0.15 there was a 5 cm band where DWB would not drive and the
+      # goal checker would not accept -- the robot stopped dead a hand's width
+      # short of the last waypoint, and the run ended in recoveries and an
+      # abort instead of arriving.
+      xy_goal_tolerance: 0.15
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: true
       stateful: true

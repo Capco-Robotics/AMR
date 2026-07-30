@@ -16,7 +16,10 @@ sys.path.insert(
     os.path.join(os.path.dirname(__file__), ".."),
 )
 
-from amr_command.path_geometry import travel_headings  # noqa: E402
+from amr_command.path_geometry import (  # noqa: E402
+    drop_points_behind,
+    travel_headings,
+)
 
 
 def test_heading_follows_the_direction_of_travel():
@@ -106,3 +109,97 @@ def test_a_path_of_identical_points_falls_back():
 
 def test_empty_path():
     assert travel_headings([]) == []
+
+
+# --- drop_points_behind ---------------------------------------------------
+
+
+def test_the_spinning_bug_case():
+
+    # The run that spun on the spot: the same saved path as above, with the
+    # robot parked where it actually was -- 1.5 m along the first leg, having
+    # already driven that far. Asking it back to the route's start makes the
+    # planner produce a hairpin through the robot's own position, which DWB
+    # answers with an endless rotation.
+    points = [
+        [-2.78, -1.33, 0.0],
+        [1.47, -1.40, 0.0],
+        [1.15, 2.02, 0.0],
+        [4.41, 2.50, 0.0],
+        [5.61, -2.31, 0.0],
+    ]
+
+    trimmed = drop_points_behind(points, -1.3, -1.4, 0.5)
+
+    # The first waypoint is behind the robot and goes; the route it still has
+    # to drive is untouched.
+    assert trimmed == points[1:]
+
+
+def test_a_route_starting_far_away_is_left_alone():
+
+    # Driving out to a route that starts across the room is a normal request,
+    # and no hairpin comes of it -- the whole path stands.
+    points = [
+        [5.0, 5.0, 0.0],
+        [6.0, 5.0, 0.0],
+        [7.0, 5.0, 0.0],
+    ]
+
+    assert drop_points_behind(points, 0.0, 0.0, 0.5) is points
+
+
+def test_only_the_first_leg_within_radius_counts():
+
+    # A route that loops back past the robot near its end must not have its
+    # middle thrown away: the leg the robot is on is the *first* one it is
+    # close to, not the last.
+    points = [
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [4.0, 0.2, 0.0],
+        [0.0, 0.2, 0.0],
+    ]
+
+    trimmed = drop_points_behind(points, 2.0, 0.0, 0.5)
+
+    assert trimmed == points[1:]
+
+
+def test_standing_on_the_last_leg_keeps_the_final_waypoint():
+
+    # Whatever else it drops, this must never return an empty path -- an
+    # empty NavigateThroughPoses goal is not a run at all.
+    points = [
+        [0.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+    ]
+
+    trimmed = drop_points_behind(points, 1.0, 0.0, 0.5)
+
+    assert trimmed == [[2.0, 0.0, 0.0]]
+
+
+def test_a_waypoint_just_reached_is_left_for_nav2():
+
+    # Standing at the start of a leg is not being past it. Dropping here is
+    # what would make this unsafe to run on a timer: every waypoint reached
+    # would take the next one with it, and the route would unravel one leg at
+    # a time. Nav2's own RemovePassedGoals retires a waypoint this close.
+    points = [
+        [0.0, 0.0, 0.0],
+        [3.0, 0.0, 0.0],
+        [3.0, 3.0, 0.0],
+    ]
+
+    assert drop_points_behind(points, 0.1, 0.05, 0.5) is points
+
+    # ...and a leg's worth of driving later, it goes.
+    assert drop_points_behind(points, 1.5, 0.05, 0.5) == points[1:]
+
+
+def test_a_single_point_path_is_never_trimmed():
+
+    points = [[1.0, 1.0, 0.0]]
+
+    assert drop_points_behind(points, 1.0, 1.0, 0.5) is points

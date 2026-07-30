@@ -8,6 +8,102 @@ without a graph, Nav2, or a map.
 import math
 
 
+def _closest_point_on_segment(px, py, ax, ay, bx, by):
+    """How far (px,py) is from segment A-B, and how far along A-B that lands.
+
+    Returns (distance, travelled), both in metres: `travelled` is measured
+    from A, so 0.0 means the closest point is A itself and the segment's own
+    length means it is B.
+    """
+
+    ex = bx - ax
+    ey = by - ay
+
+    length_sq = ex * ex + ey * ey
+
+    if length_sq < 1e-12:
+        # Degenerate segment: A and B are the same point.
+        return math.hypot(px - ax, py - ay), 0.0
+
+    t = ((px - ax) * ex + (py - ay) * ey) / length_sq
+    t = max(0.0, min(1.0, t))
+
+    return (
+        math.hypot(px - (ax + t * ex), py - (ay + t * ey)),
+        t * math.sqrt(length_sq),
+    )
+
+
+def drop_points_behind(points, robot_x, robot_y, radius):
+    """Drop leading waypoints the robot has provably already driven past.
+
+    NavigateThroughPoses has to visit every pose it is given, and Nav2 only
+    forgets one when the robot comes within half a metre of it
+    (RemovePassedGoals). A waypoint the robot went past any wider than that is
+    a trap: every replan from then on produces a hairpin -- back down the leg
+    to the waypoint, a U-turn, then the same ground again forwards.
+
+    A hairpin is what breaks DWB. Both legs occupy the same cells of a 3 m
+    local costmap, so PathDist and PathAlign score the outbound and return
+    directions identically, while GoalDist -- which only sees the end of the
+    pruned local plan, out ahead on the return leg -- pulls the other way. The
+    best-scoring trajectory becomes a pure rotation, every cycle, and the
+    robot turns circles on the spot instead of driving. Nav2's progress
+    checker does not rescue it either: spinning wobbles the base further than
+    `required_movement_radius`, so the stall reads as progress and the run
+    never times out.
+
+    Two ordinary things put the robot past a waypoint by more than Nav2's half
+    metre. It starts already standing on the route, because the operator drew
+    over the map from wherever it happened to be; and it cuts corners, because
+    DWB follows the plan by scoring trajectories against it rather than
+    tracking it exactly. Both are why this has to be re-checked *during* a run
+    and not only when one is sent.
+
+    `radius` is how close to a leg the robot has to be for that leg to count
+    as one it is driving. Only the *first* such leg is considered, so a route
+    that loops back past the robot later on keeps its middle. The robot also
+    has to have travelled further than `radius` along that leg, which is what
+    makes this safe to run continuously: immediately after a waypoint is
+    dropped the robot sits at the start of the next leg, and nothing more is
+    dropped until it has actually driven along it.
+
+    Returns the trimmed list (the same point objects), or `points` unchanged
+    when there is nothing to drop -- including when the robot is nowhere near
+    the route, since driving out to a distant route's start is a normal thing
+    to ask for and no hairpin comes of it.
+    """
+
+    if len(points) < 2:
+        return points
+
+    for i in range(len(points) - 1):
+
+        distance, travelled = _closest_point_on_segment(
+            robot_x,
+            robot_y,
+            points[i][0],
+            points[i][1],
+            points[i + 1][0],
+            points[i + 1][1],
+        )
+
+        if distance > radius:
+            continue
+
+        if travelled <= radius:
+            # On this leg, but not yet far enough along it to have left the
+            # waypoint behind. Nav2's own RemovePassedGoals covers the rest.
+            return points
+
+        # Everything up to and including the start of this leg is behind the
+        # robot. points[i + 1] onwards always leaves at least one waypoint,
+        # because i stops at len(points) - 2.
+        return points[i + 1:]
+
+    return points
+
+
 def travel_headings(points):
     """Yaw for each waypoint, taken from the direction of travel.
 

@@ -43,6 +43,7 @@ from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
 from amr_command.path_executor import PathExecutor
 from amr_command.exploration_client import ExplorationClient
+from amr_command.path_geometry import drop_points_behind
 from amr_command import keepout_zones
 
 
@@ -257,6 +258,17 @@ class CommandGatewayNode(Node):
             self.get_parameter("obstacle_margin").value
         )
 
+        # How close to a drawn route the robot counts as already being on it,
+        # so a run resumes from where it stands instead of driving back to the
+        # route's start. See path_geometry.drop_points_behind() for what going
+        # back costs: a hairpin the local planner cannot follow. Matches the
+        # 0.5 m radius Nav2's own RemovePassedGoals uses for the same idea.
+        self.declare_parameter("path_resume_radius", 0.5)
+
+        self.path_resume_radius = float(
+            self.get_parameter("path_resume_radius").value
+        )
+
         # Geometry of the most recent /map, so a zone edit can be rasterised
         # onto the same grid without waiting for the next map update.
         self._latest_map_info = None
@@ -395,6 +407,14 @@ class CommandGatewayNode(Node):
                 1.0 / pose_rate,
                 self._broadcast_pose,
             )
+        # Twice a second is plenty to notice a waypoint going behind the robot:
+        # at 0.3 m/s it cannot drive far enough between ticks to matter, and
+        # each tick is a walk over a route of at most a few hundred points.
+        self.create_timer(
+            0.5,
+            self._supervise_path,
+        )
+
         self.plan_sub = self.create_subscription(
             Path,
             "/plan",
@@ -652,6 +672,35 @@ class CommandGatewayNode(Node):
 
                     return
 
+                # A route the robot is already standing on has to be trimmed
+                # before anything else looks at it: the legs behind the robot
+                # are not going to be driven, so they must not be able to
+                # reject the run either. This is what stops the robot spinning
+                # on the spot a waypoint short of the route's start -- see
+                # path_geometry.drop_points_behind().
+                pose = self._current_pose()
+
+                if pose is not None:
+
+                    trimmed = drop_points_behind(
+                        points,
+                        pose["x"],
+                        pose["y"],
+                        self.path_resume_radius,
+                    )
+
+                    if len(trimmed) != len(points):
+
+                        self.get_logger().info(
+                            "Resuming the path from waypoint "
+                            f"{len(points) - len(trimmed) + 1} of "
+                            f"{len(points)}: the robot is already on the "
+                            "route, and going back to its start would ask "
+                            "the local planner to follow a hairpin"
+                        )
+
+                        points = trimmed
+
                 # Nav2 would plan around a keep-out on its own, but
                 # NavigateThroughPoses treats these points as goal *poses*: a
                 # pose inside a zone is simply unreachable, and the run dies
@@ -697,6 +746,39 @@ class CommandGatewayNode(Node):
                         "state": "rejected",
                         "message": message,
                         "obstacle": [round(hit[0], 3), round(hit[1], 3)],
+                    })
+
+                    return
+
+                # Nav2's global costmap is sized to the map, so a waypoint
+                # outside the map is outside the costmap -- the planner's own
+                # words are "the goal sent to the planner is off the global
+                # costmap, planning will always fail to this goal". Every
+                # replan then fails, the behaviour tree runs spin and back-up
+                # recoveries instead, and the robot turns circles while the
+                # console reports a run in progress. A saved path outlives the
+                # map it was drawn on, so this is reachable from the console
+                # any time a path is run against a smaller or fresher map.
+                outside = self._path_leaves_map(points)
+
+                if outside is not None:
+
+                    message = (
+                        "Path leaves the mapped area near "
+                        f"({outside[0]:.2f}, {outside[1]:.2f}) -- map that "
+                        "area before running this path"
+                    )
+
+                    self.get_logger().warning(f"Rejected nav_path: {message}")
+
+                    self._broadcast({
+                        "type": "path_status",
+                        "state": "rejected",
+                        "message": message,
+                        "off_map": [
+                            round(outside[0], 3),
+                            round(outside[1], 3),
+                        ],
                     })
 
                     return
@@ -1478,6 +1560,39 @@ class CommandGatewayNode(Node):
 
         return self._obstacle_mask
 
+    def _path_leaves_map(self, points):
+        """First waypoint outside the current map, else None.
+
+        Only the waypoints are checked, not the segments between them: the map
+        is a rectangle, so a straight line between two points inside it cannot
+        leave it.
+        """
+
+        info = self._latest_map_info
+
+        if info is None:
+            # No map yet. Nav2 has no costmap either, so let the planner
+            # produce the real complaint rather than inventing one here.
+            return None
+
+        origin_x = info.origin.position.x
+        origin_y = info.origin.position.y
+
+        for point in points:
+
+            col = int((point[0] - origin_x) / info.resolution)
+            row = int((point[1] - origin_y) / info.resolution)
+
+            if (
+                col < 0
+                or col >= info.width
+                or row < 0
+                or row >= info.height
+            ):
+                return (point[0], point[1])
+
+        return None
+
     def _path_hits_obstacle(self, points):
         """First world point where the path runs into a wall, else None.
 
@@ -1661,6 +1776,45 @@ class CommandGatewayNode(Node):
 
         except Exception:
             return self._latest_pose
+
+    def _supervise_path(self):
+        """Keep the running route ahead of the robot, not behind it.
+
+        A waypoint the robot has already driven past cannot be reached without
+        turning back, and turning back is what makes the local planner spin on
+        the spot instead of driving (path_geometry.drop_points_behind()). Nav2
+        drops a waypoint only within half a metre of it, and DWB cuts corners
+        wider than that, so the leftovers are cleared out here: what is left of
+        the route is re-sent, which supersedes the old goal without the
+        operator seeing a new run start.
+        """
+
+        points = self.path_executor.active_points()
+
+        if points is None or len(points) < 2:
+            return
+
+        pose = self._current_pose()
+
+        if pose is None:
+            return
+
+        remaining = drop_points_behind(
+            points,
+            pose["x"],
+            pose["y"],
+            self.path_resume_radius,
+        )
+
+        if len(remaining) == len(points):
+            return
+
+        self.get_logger().info(
+            f"Dropped {len(points) - len(remaining)} waypoint(s) the robot has "
+            f"driven past; re-sending the remaining {len(remaining)}"
+        )
+
+        self.path_executor.send_path(remaining, announce=False)
 
     def _broadcast_pose(self):
         """Push the robot's pose to the consoles, if it has moved."""
