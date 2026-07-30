@@ -1,0 +1,50 @@
+# Explore the reachable area and build a map of it, unattended.
+#
+# Goal
+#
+# max_duration_sec: give up and report what was mapped after this long.
+#                   0 means no limit.
+# min_frontier_size: ignore frontiers shorter than this, in metres. A finger's
+#                    width of unknown behind a chair leg is not worth a trip.
+#                    0 means use the node's own parameter.
+# return_to_start: drive back to where exploration began once there is nothing
+#                  left to explore.
+float32 max_duration_sec
+float32 min_frontier_size
+bool return_to_start
+---
+# Result
+#
+# success is False for "stopped early" as well as for outright failure --
+# message says which. explored_area_m2 counts free (driveable) cells only, not
+# walls.
+#
+# frontiers_visited counts frontiers *dealt with*, which is not the same as
+# trips completed: most frontiers stop existing because the robot mapped them
+# on the way past, without ever arriving at them. Both endings count here,
+# because both mean that piece of unknown is now known.
+bool success
+string message
+uint32 frontiers_visited
+float32 explored_area_m2
+float32 duration_sec
+---
+# Feedback
+#
+# state: exploring | driving | returning | waiting_for_map | settling
+# percent_explored: known cells as a share of the current map grid. The grid
+#                   grows as SLAM discovers more, so this is a coverage
+#                   readout, not a countdown to completion -- frontiers_remaining
+#                   is the honest "how much is left".
+# target_x/target_y: the frontier currently being driven to, in map metres.
+#                    Both 0.0 when nothing is targeted.
+string state
+string message
+uint32 frontiers_remaining
+uint32 frontiers_visited
+float32 explored_area_m2
+float32 percent_explored
+float32 distance_to_target
+float32 target_x
+float32 target_y
+float32 elapsed_sec

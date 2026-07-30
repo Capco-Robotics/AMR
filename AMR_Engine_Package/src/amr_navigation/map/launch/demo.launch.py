@@ -28,7 +28,9 @@ def generate_launch_description():
 
     package_dir = get_package_share_directory("amr_navigation_map")
 
-    forwarded = ["rviz", "noise", "scan_topic", "lift", "nav", "gateway"]
+    forwarded = [
+        "rviz", "noise", "scan_topic", "lift", "nav", "gateway", "explore",
+    ]
 
     return LaunchDescription([
 
@@ -37,9 +39,10 @@ def generate_launch_description():
         DeclareLaunchArgument("scan_topic", default_value="/scan"),
         DeclareLaunchArgument("lift", default_value="false"),
 
-        # The two that make this a demo rather than a bare sim.
+        # The three that make this a demo rather than a bare sim.
         DeclareLaunchArgument("nav", default_value="true"),
         DeclareLaunchArgument("gateway", default_value="true"),
+        DeclareLaunchArgument("explore", default_value="true"),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(

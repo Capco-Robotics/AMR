@@ -24,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/TriggerEstop.srv"
   "action/NavigateToGoal.action"
   "action/MoveLift.action"
+  "action/ExploreArea.action"
   DEPENDENCIES std_msgs action_msgs unique_identifier_msgs
 )
 

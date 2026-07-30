@@ -18,6 +18,9 @@
        plus CostmapFilterInfo for the keep-out zone filter mask. -->
   <depend>nav2_msgs</depend>
   <depend>action_msgs</depend>
+  <!-- map -> base_link, so the console's robot marker sits where RViz draws
+       it and updates at the timer's rate rather than the map's. -->
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

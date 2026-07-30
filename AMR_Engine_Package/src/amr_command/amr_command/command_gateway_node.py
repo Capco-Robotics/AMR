@@ -15,6 +15,9 @@ import json
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
+from rclpy.duration import Duration
+
+import tf2_ros
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -38,6 +41,7 @@ from slam_toolbox.srv import (
 from amr_command.map_encoder import encode_occupancy_grid
 from amr_command.websocket_server import WebsocketServer
 from amr_command.path_executor import PathExecutor
+from amr_command.exploration_client import ExplorationClient
 from amr_command import keepout_zones
 
 
@@ -81,7 +85,32 @@ class CommandGatewayNode(Node):
         # websocket loop exists.
         self.path_executor = PathExecutor(self, self._broadcast)
 
+        # Runs amr_navigation_explore's unattended map build. Same shape as
+        # the path executor: fire and forget, progress arrives as frames.
+        self.exploration = ExplorationClient(
+            self,
+            self._broadcast,
+            on_complete=self._exploration_complete,
+        )
+
+        # Map name to save under when an exploration finishes on its own, or
+        # None when the operator did not ask for that. A run that was stopped
+        # early does not trigger it -- see _exploration_complete.
+        self._explore_save_as = None
+
         self._latest_pose = None
+
+        # Last pose actually sent, so a parked robot does not generate 10
+        # identical frames a second for every connected console.
+        self._last_sent_pose = None
+
+        # map -> base_link is what RViz draws the robot from, and it is not
+        # the same as /odom: SLAM corrects the robot's map-frame position by
+        # moving map->odom, so raw odometry slides away from the map the
+        # console is drawing on. Odometry stays as the fallback for a rig
+        # where SLAM has not published a transform yet.
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.declare_parameter(
             "maps_directory",
@@ -304,6 +333,26 @@ class CommandGatewayNode(Node):
             0.1,
             self._publish_cmd_vel,
         )
+
+        # Stream the robot's pose on its own, rather than only as a field on
+        # the map frame.
+        #
+        # slam_toolbox republishes /map every map_update_interval (2 s), so a
+        # pose carried on the map frame moves the console's robot marker twice
+        # a minute-ish -- it visibly teleported between positions while RViz,
+        # which reads tf at 20 Hz, showed it gliding. Under teleop that made
+        # the console feel broken: you hold a button and nothing moves for two
+        # seconds. A pose frame is ~60 bytes against the map's base64 PNG, so
+        # sending it 10x more often is still a fraction of the traffic.
+        self.declare_parameter("pose_publish_rate", 10.0)
+
+        pose_rate = float(self.get_parameter("pose_publish_rate").value)
+
+        if pose_rate > 0.0:
+            self.create_timer(
+                1.0 / pose_rate,
+                self._broadcast_pose,
+            )
         self.plan_sub = self.create_subscription(
             Path,
             "/plan",
@@ -488,6 +537,21 @@ class CommandGatewayNode(Node):
             elif frame_type == "nav_path_cancel":
 
                 self.path_executor.cancel_path()
+
+            elif frame_type == "explore_start":
+
+                self._start_exploration(data)
+
+            elif frame_type == "explore_stop":
+
+                self.exploration.stop()
+
+            elif frame_type == "explore_status_request":
+
+                # A console that connected mid-run needs the current state;
+                # otherwise its panel sits on "Idle" behind a robot that is
+                # visibly driving itself around.
+                self._broadcast(self.exploration.last_status())
 
             elif frame_type == "zone_list":
 
@@ -1065,6 +1129,86 @@ class CommandGatewayNode(Node):
             }),
             self.websocket_server.loop,
         )
+    # ---- autonomous map building ----------------------------------------
+
+    # An unattended run has to be able to end. Without a ceiling, a robot that
+    # keeps finding slivers of unknown behind furniture explores until its
+    # battery dies -- so the console's "no limit" is really this.
+    _MAX_EXPLORE_DURATION_SEC = 3600.0
+
+    def _start_exploration(self, data):
+        """Validate an explore_start frame and hand it to the explorer."""
+
+        save_as = data.get("save_as")
+
+        if save_as:
+
+            save_as = self._sanitize_map_name(save_as)
+
+            if save_as is None:
+
+                self._broadcast({
+                    "type": "explore_status",
+                    "state": "rejected",
+                    "message": "Invalid map name",
+                    "running": False,
+                })
+
+                return
+
+        try:
+            max_duration = float(data.get("max_duration_sec", 0.0) or 0.0)
+            min_frontier = float(data.get("min_frontier_size", 0.0) or 0.0)
+        except (TypeError, ValueError):
+
+            self._broadcast({
+                "type": "explore_status",
+                "state": "rejected",
+                "message": "Invalid exploration settings",
+                "running": False,
+            })
+
+            return
+
+        if not math.isfinite(max_duration) or max_duration <= 0.0:
+            max_duration = self._MAX_EXPLORE_DURATION_SEC
+        else:
+            max_duration = min(max_duration, self._MAX_EXPLORE_DURATION_SEC)
+
+        if not math.isfinite(min_frontier) or min_frontier < 0.0:
+            min_frontier = 0.0
+
+        # Only remember the name if the run actually started; otherwise a
+        # failed start would arm a save that fires after the *next* run.
+        started = self.exploration.start(
+            max_duration_sec=max_duration,
+            min_frontier_size=min_frontier,
+            return_to_start=bool(data.get("return_to_start", True)),
+        )
+
+        self._explore_save_as = save_as if started else None
+
+    def _exploration_complete(self, success):
+        """Save the map, if the operator asked for that and the run finished.
+
+        Deliberately not on a stopped or timed-out run: the operator asked for
+        "explore the building, then save it as X", and saving a half-explored
+        map under that name silently destroys the previous one.
+        """
+
+        save_as = self._explore_save_as
+
+        self._explore_save_as = None
+
+        if not success or not save_as:
+            return
+
+        self.get_logger().info(
+            f"Exploration complete -- saving the map as '{save_as}'"
+        )
+
+        self._save_map(save_as)
+
     # ---- keep-out zones -------------------------------------------------
 
     def _publish_filter_info(self):
@@ -1307,6 +1451,82 @@ class CommandGatewayNode(Node):
 
 
 
+    def _current_pose(self):
+        """Robot pose in the map frame, or None if nothing knows where it is.
+
+        Prefers tf, so the console's marker sits where RViz draws it. Falls
+        back to raw odometry, which is only correct while map and odom
+        coincide -- true on a rig with no SLAM running, and close enough
+        before the first loop closure.
+        """
+
+        try:
+
+            transform = self.tf_buffer.lookup_transform(
+                "map",
+                "base_link",
+                Time(),
+                # Zero timeout: this runs on a 10 Hz timer on the same thread
+                # as every subscription, so a blocking wait for a transform
+                # that is not coming would stall the whole gateway.
+                timeout=Duration(seconds=0.0),
+            )
+
+            translation = transform.transform.translation
+            q = transform.transform.rotation
+
+            yaw = math.atan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+            )
+
+            return {
+                "x": translation.x,
+                "y": translation.y,
+                "yaw": yaw,
+            }
+
+        except Exception:
+            return self._latest_pose
+
+    def _broadcast_pose(self):
+        """Push the robot's pose to the consoles, if it has moved."""
+
+        if not self.websocket_server.loop:
+            return
+
+        pose = self._current_pose()
+
+        if pose is None:
+            return
+
+        previous = self._last_sent_pose
+
+        if previous is not None:
+
+            moved = (
+                abs(pose["x"] - previous["x"]) > 0.01
+                or abs(pose["y"] - previous["y"]) > 0.01
+                or abs(
+                    math.atan2(
+                        math.sin(pose["yaw"] - previous["yaw"]),
+                        math.cos(pose["yaw"] - previous["yaw"]),
+                    )
+                ) > 0.01
+            )
+
+            if not moved:
+                return
+
+        self._last_sent_pose = pose
+
+        self._broadcast({
+            "type": "pose",
+            "x": round(pose["x"], 4),
+            "y": round(pose["y"], 4),
+            "yaw": round(pose["yaw"], 4),
+        })
+
     @staticmethod
     def _map_geometry(info):
 
@@ -1350,7 +1570,11 @@ class CommandGatewayNode(Node):
 
             frame = encode_occupancy_grid(msg)
             frame["type"] = "map"
-            frame["pose"] = self._latest_pose
+
+            # Still carried here so a console that has just connected draws the
+            # robot on its first map rather than waiting for a pose frame; the
+            # pose timer is what keeps it moving after that.
+            frame["pose"] = self._current_pose()
 
             asyncio.run_coroutine_threadsafe(
                 self.websocket_server.broadcast(frame),

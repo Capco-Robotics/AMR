@@ -19,6 +19,8 @@ from geometry_msgs.msg import PoseStamped
 
 from nav2_msgs.action import NavigateThroughPoses
 
+from amr_command.path_geometry import travel_headings
+
 
 # Terminal action states -> what the operator console should show.
 _TERMINAL_STATES = {
@@ -50,6 +52,21 @@ class PathExecutor:
 
         self._goal_handle = None
         self._last_feedback_time = 0.0
+
+        # Every goal gets a number, and its callbacks carry that number.
+        #
+        # Superseding a path leaves the old goal's result callback still in
+        # flight. That callback used to clear _goal_handle unconditionally --
+        # so a moment after a second Run, the handle of the goal that was
+        # actually driving was wiped, Stop reported "No path is running", and
+        # the robot could not be stopped at all while the console still showed
+        # it running. Stale callbacks are now ignored instead.
+        self._generation = 0
+
+        # True between handing a goal to the action client and hearing whether
+        # it was accepted. Stop has to work in that window too, or a fast
+        # Run-then-Stop leaves a goal nobody holds a handle to.
+        self._pending = False
 
     def _status(self, state, message="", **extra):
         frame = {
@@ -83,14 +100,30 @@ class PathExecutor:
 
         # A second path while one is running would otherwise leave the first
         # goal handle orphaned and uncancellable.
-        if self._goal_handle is not None:
+        if self._goal_handle is not None or self._pending:
             self.cancel_path(reason="Superseded by a new path")
+
+        # Past this point the old goal's callbacks are stale and will be
+        # ignored, so they cannot clear the handle this new goal is about to
+        # install.
+        self._generation += 1
+        generation = self._generation
+
+        self._goal_handle = None
+        self._pending = True
 
         goal = NavigateThroughPoses.Goal()
 
         goal.poses = []
 
-        for x, y, theta in waypoints:
+        # The heading that comes in is ignored, deliberately -- see
+        # path_geometry.travel_headings(). The console sends 0.0 for every
+        # point of a freehand route, and Nav2 enforces that as a goal
+        # orientation at every waypoint, which makes the robot stop and spin
+        # at each one instead of driving through.
+        headings = travel_headings(waypoints)
+
+        for (x, y, _), theta in zip(waypoints, headings):
 
             pose = PoseStamped()
 
@@ -114,11 +147,13 @@ class PathExecutor:
 
         future = self._client.send_goal_async(
             goal,
-            feedback_callback=self._feedback_callback,
+            feedback_callback=(
+                lambda message: self._feedback_callback(message, generation)
+            ),
         )
 
         future.add_done_callback(
-            self._goal_response_callback
+            lambda f: self._goal_response_callback(f, generation)
         )
 
         self._node.get_logger().info(
@@ -133,15 +168,40 @@ class PathExecutor:
 
         return True
 
-    def _goal_response_callback(self, future):
+    def _goal_response_callback(self, future, generation):
+
+        stale = generation != self._generation
 
         try:
             goal_handle = future.result()
         except Exception as e:
+
+            if stale:
+                return
+
             self._node.get_logger().error(f"Path goal failed: {e}")
             self._goal_handle = None
+            self._pending = False
             self._status("rejected", str(e))
             return
+
+        if stale:
+
+            # Superseded or stopped while this goal was still being accepted.
+            # Nobody is going to hold this handle, so cancel it here or it
+            # drives on with no way to reach it.
+            if goal_handle.accepted:
+
+                self._node.get_logger().info(
+                    "Cancelling a path goal that was superseded before it "
+                    "was accepted"
+                )
+
+                goal_handle.cancel_goal_async()
+
+            return
+
+        self._pending = False
 
         if not goal_handle.accepted:
             self._node.get_logger().error("Path goal rejected")
@@ -156,10 +216,15 @@ class PathExecutor:
 
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
-            self._result_callback
+            lambda f: self._result_callback(f, generation)
         )
 
-    def _feedback_callback(self, feedback_message):
+    def _feedback_callback(self, feedback_message, generation):
+
+        # Feedback from a superseded goal would otherwise keep overwriting the
+        # console's status with the old run's progress.
+        if generation != self._generation:
+            return
 
         now = time.monotonic()
 
@@ -178,9 +243,16 @@ class PathExecutor:
             recoveries=int(feedback.number_of_recoveries),
         )
 
-    def _result_callback(self, future):
+    def _result_callback(self, future, generation):
+
+        # The whole point of the generation guard: this used to clear the
+        # handle of whichever goal was current, including one that had just
+        # replaced this finished goal.
+        if generation != self._generation:
+            return
 
         self._goal_handle = None
+        self._pending = False
 
         try:
             response = future.result()
@@ -207,8 +279,24 @@ class PathExecutor:
     def cancel_path(self, reason="Cancel requested by operator"):
 
         if self._goal_handle is None:
-            self._status("idle", "No path is running")
-            return False
+
+            if not self._pending:
+                self._status("idle", "No path is running")
+                return False
+
+            # Sent but not yet accepted. Retiring the generation makes the
+            # response callback cancel it the moment it arrives, so Stop works
+            # even in that window instead of silently doing nothing.
+            self._generation += 1
+            self._pending = False
+
+            self._node.get_logger().info(
+                "Navigation cancel requested before the goal was accepted"
+            )
+
+            self._status("canceling", reason)
+
+            return True
 
         self._goal_handle.cancel_goal_async()
 

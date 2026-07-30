@@ -46,6 +46,12 @@
 
         <div class="action-grid">
 
+          <button class="action" data-goto="explore" type="button">
+            <span class="action-dot dot-explore" aria-hidden="true"></span>
+            <span class="action-label">Map Builder</span>
+            <span class="action-sub">Explore and map on its own</span>
+          </button>
+
           <button class="action" data-goto="zones" type="button">
             <span class="action-dot dot-zone" aria-hidden="true"></span>
             <span class="action-label">Keep-out Zones</span>
@@ -91,6 +97,70 @@
           </button>
           <button class="btn" data-goto="maps" type="button">
             Maps
+          </button>
+        </div>
+
+      </section>
+
+      <!-- ========================= MAP BUILDER ======================== -->
+      <section class="card screen" data-screen="explore" hidden>
+
+        <p class="help">
+          The AMR drives itself to the edges of what it has mapped until there
+          is nothing unexplored left to reach. Keep-out zones are respected.
+          You can stop it at any time.
+        </p>
+
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span id="explore-state" class="status-value">Idle</span>
+        </div>
+
+        <p id="explore-detail" class="explore-detail"></p>
+
+        <div class="progress">
+          <div class="progress-track">
+            <div id="explore-progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="explore-progress-label" class="progress-label">0% known</span>
+        </div>
+
+        <div class="stat-grid">
+
+          <div class="stat">
+            <span class="stat-value" id="explore-area">0.0 m²</span>
+            <span class="stat-label">Explored</span>
+          </div>
+
+          <div class="stat">
+            <span class="stat-value" id="explore-frontiers">0</span>
+            <span class="stat-label">Frontiers left</span>
+          </div>
+
+          <div class="stat">
+            <span class="stat-value" id="explore-elapsed">0s</span>
+            <span class="stat-label">Elapsed</span>
+          </div>
+
+        </div>
+
+        <h2 class="section-heading">When it finishes</h2>
+
+        <div class="field-row">
+          <input id="explore-map-name" type="text" placeholder="Save map as (optional)" autocomplete="off">
+        </div>
+
+        <label class="check-row" for="explore-return">
+          <input id="explore-return" type="checkbox" checked>
+          <span>Drive back to the starting point when done</span>
+        </label>
+
+        <div class="button-row">
+          <button id="explore-start-btn" class="btn btn-primary btn-wide" type="button">
+            Start Mapping
+          </button>
+          <button id="explore-stop-btn" class="btn btn-danger btn-wide" type="button">
+            Stop
           </button>
         </div>
 

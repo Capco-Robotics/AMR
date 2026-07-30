@@ -93,6 +93,34 @@ message.
 }
 ```
 
+### Pose Frame *(implemented)*
+
+The robot's position in the map frame, about 10 times a second.
+
+```json
+{"type": "pose", "x": 1.243, "y": -0.882, "yaw": 0.4712}
+```
+
+This exists because the map frame's own `pose` field updates at the map's
+rate, and slam_toolbox republishes `/map` every `map_update_interval` (2 s by
+default). The console's robot marker therefore jumped between positions two
+seconds apart while RViz, which reads tf at 20 Hz, showed it gliding — under
+teleop it looked like the console had frozen. A pose frame is ~60 bytes
+against the map's base64 PNG, so sending it 20x more often is a rounding error
+on the traffic.
+
+Sent only when the robot has actually moved (1 cm / 0.01 rad), so a parked
+robot costs nothing. Rate is the `pose_publish_rate` parameter; 0 disables it.
+
+The pose is read from tf (`map` → `base_link`), falling back to `/odom` when
+no transform is available. That distinction matters once SLAM starts
+correcting: it moves `map`→`odom`, so raw odometry drifts away from the map the
+console is drawing on, and the marker would sit somewhere the robot is not.
+
+Note that this only smooths the *robot*. The map underneath it still redraws
+every 2 s; lower `map_update_interval` in `slam_toolbox_params.yaml` if that
+matters, at the cost of CPU on the Pi.
+
 ### Plan Frame *(implemented)*
 
 The current Nav2 plan, decimated to every fifth pose. `points` are
@@ -272,6 +300,96 @@ the gateway re-checks before anything is driven.
 
 The mask is aligned to the geometry of the latest `/map`, and is republished
 whenever the map's size, resolution or origin changes.
+
+---
+
+## Autonomous map building *(implemented)*
+
+The console's **Map Builder** screen. The AMR drives itself to the edge of what
+it has mapped, repeatedly, until nothing unexplored is reachable. The gateway
+is only a relay here: the deciding is done by `amr_navigation_explore`, which
+the gateway drives through the `explore_area` action.
+
+| Console sends | Gateway replies |
+|---|---|
+| `{"type": "explore_start", ...}` | `explore_status` (repeating) |
+| `{"type": "explore_stop"}` | `explore_status` |
+| `{"type": "explore_status_request"}` | `explore_status` (the last one) |
+
+```json
+{
+  "type": "explore_start",
+  "save_as": "warehouse",
+  "return_to_start": true,
+  "max_duration_sec": 0
+}
+```
+
+Every field is optional:
+
+- `save_as` — save the map under this name when exploration finishes **on its
+  own**. A run that was stopped, or that ran out of time, does not save:
+  "explore the building, then save it as X" should not quietly overwrite an
+  existing map with a half-explored one. Same character class as map names.
+- `return_to_start` — drive back to where the run began. Defaults to `true`.
+- `max_duration_sec` — 0, or absent, means the gateway's own ceiling of 3600 s.
+  An unattended run has to be able to end; without a ceiling a robot that keeps
+  finding slivers of unknown behind furniture explores until its battery dies.
+
+`explore_status` is broadcast about twice a second while a run is live, and
+once on every state change:
+
+```json
+{
+  "type": "explore_status",
+  "state": "driving",
+  "message": "Driving to a 2.4 m frontier",
+  "running": true,
+  "frontiers_remaining": 3,
+  "frontiers_visited": 5,
+  "explored_area_m2": 108.13,
+  "percent_explored": 97.9,
+  "distance_to_target": 1.82,
+  "target": [-2.65, 1.98],
+  "elapsed_sec": 31.9
+}
+```
+
+| state | Meaning |
+|---|---|
+| `sent`, `accepted` | Starting up. |
+| `waiting_for_map` | No `/map` or no robot pose yet. |
+| `exploring` | Between frontiers, choosing the next. |
+| `driving` | On its way to a frontier. |
+| `settling` | Found nothing; confirming before declaring the job done. |
+| `returning` | Exploration done, driving back to the start. |
+| `canceling`, `canceled` | Stop was pressed. |
+| `complete` | Nothing left to explore. This is the only state that triggers `save_as`. |
+| `stopped` | Ended without finishing — cancelled, or out of time. |
+| `aborted`, `rejected`, `unavailable` | Never started, or failed outright. |
+
+`running` is the gateway's own view of whether a goal is live, and is the field
+to drive UI state from — the state name can lag it by a frame.
+
+`target` is present only while one is being driven to, and is the field the map
+renderer draws the teal ring from. `distance_to_target` accompanies it.
+
+Two readouts need care:
+
+- **`percent_explored` is coverage, not progress.** It is known cells as a
+  share of the current map grid, and that grid *grows* as SLAM discovers more,
+  so the number can move in either direction. It is labelled "known" in the
+  console for that reason.
+- **`frontiers_remaining` going up is normal** — it means a new room was found.
+  `frontiers_visited` counts frontiers dealt with, which is mostly *not* trips
+  completed: most frontiers stop existing because the robot mapped them on the
+  way past without ever arriving.
+
+Keep-out zones are honoured. The explorer subscribes to the same latched
+`/keepout_filter_mask` the gateway publishes for Nav2, and refuses to target a
+frontier inside one — otherwise it would pick a goal in a zone, have Nav2
+refuse to plan there, blacklist it, and repeat that for every cell along the
+zone's edge.
 
 ---
 

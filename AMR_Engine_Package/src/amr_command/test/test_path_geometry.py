@@ -1,0 +1,108 @@
+"""Waypoint headings for operator-drawn paths.
+
+path_geometry is ROS-free, so these run under plain pytest:
+
+    python3 -m pytest src/amr_command/test/test_path_geometry.py
+"""
+
+import math
+import os
+import sys
+
+import pytest
+
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(__file__), ".."),
+)
+
+from amr_command.path_geometry import travel_headings  # noqa: E402
+
+
+def test_heading_follows_the_direction_of_travel():
+
+    # Due east, then due north. The console sends 0.0 for both, which would
+    # ask the robot to face east at the corner it is meant to turn north at.
+    points = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+    ]
+
+    headings = travel_headings(points)
+
+    assert headings[0] == pytest.approx(0.0)
+    assert headings[1] == pytest.approx(math.pi / 2)
+
+    # The last pose keeps the heading it arrived on -- there is no segment
+    # leaving it to derive one from.
+    assert headings[2] == pytest.approx(math.pi / 2)
+
+
+def test_the_saved_paths_bug_case():
+
+    # The real path that made the robot spin: every heading 0.0, but the route
+    # turns north and then south. Every waypoint must end up pointing along
+    # its own segment, and none of the turning ones may stay at 0.0.
+    points = [
+        [-2.78, -1.33, 0.0],
+        [1.47, -1.40, 0.0],
+        [1.15, 2.02, 0.0],
+        [4.41, 2.50, 0.0],
+        [5.61, -2.31, 0.0],
+    ]
+
+    headings = travel_headings(points)
+
+    assert len(headings) == len(points)
+
+    for i in range(len(points) - 1):
+
+        expected = math.atan2(
+            points[i + 1][1] - points[i][1],
+            points[i + 1][0] - points[i][0],
+        )
+
+        assert headings[i] == pytest.approx(expected)
+
+    # The leg heading north and the leg heading south must not both be "face
+    # due east", which is what the stored 0.0 said.
+    assert headings[1] > 1.0
+    assert headings[3] < -1.0
+
+
+def test_repeated_points_do_not_become_due_east():
+
+    # atan2(0, 0) is 0.0, which is precisely the heading this code exists to
+    # avoid inventing. A duplicated point takes the next real direction.
+    points = [
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 2.0, 0.0],
+    ]
+
+    headings = travel_headings(points)
+
+    assert headings[0] == pytest.approx(math.pi / 2)
+    assert headings[1] == pytest.approx(math.pi / 2)
+    assert headings[2] == pytest.approx(math.pi / 2)
+
+
+def test_single_point_keeps_its_supplied_heading():
+
+    # Nothing to derive from, so an explicitly requested orientation stands.
+    assert travel_headings([[1.0, 2.0, 1.234]]) == pytest.approx([1.234])
+
+
+def test_a_path_of_identical_points_falls_back():
+
+    headings = travel_headings([
+        [1.0, 1.0, 0.5],
+        [1.0, 1.0, 0.5],
+    ])
+
+    assert headings == pytest.approx([0.5, 0.5])
+
+
+def test_empty_path():
+    assert travel_headings([]) == []

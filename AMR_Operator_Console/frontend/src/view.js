@@ -20,6 +20,7 @@ export const HOME = "home";
 
 const TITLES = {
     home: "AMR Console",
+    explore: "Map Builder",
     zones: "Keep-out Zones",
     "path-new": "New Path",
     "path-run": "Run Path",
@@ -29,6 +30,7 @@ const TITLES = {
 
 const HINTS = {
     home: "",
+    explore: "The AMR maps the area by itself. Watch it on the map above.",
     zones: "Hold and drag on the map to trace a keep-out area.",
     "path-new": "Hold and drag on the map to draw a route.",
     "path-run": "Preview a saved path, then run it.",
@@ -39,6 +41,9 @@ const HINTS = {
 // Which map tool each screen owns.
 const MODES = {
     home: MODE_NONE,
+    // Nothing to draw here -- the map is a view of what the robot is doing,
+    // and an armed tool would turn a stray tap into a command mid-run.
+    explore: MODE_NONE,
     zones: MODE_ZONE,
     "path-new": MODE_PATH,
     "path-run": MODE_NONE,

@@ -26,11 +26,16 @@ import {
     handleZoneFrame,
     refreshZones,
 } from "./zone_panel.js";
+import {
+    initExplorePanel,
+    handleExploreFrame,
+    refreshExploration,
+} from "./explore_panel.js";
 import { initZoneDraw } from "./zone_draw.js";
 import { initModeToolbar } from "./mode_toolbar.js";
 import { initViews } from "./view.js";
 import { notifyError, notifyInfo } from "./notice.js";
-import { renderMap, updatePlan } from "./map_renderer.js";
+import { renderMap, updatePlan, updateRobotPose } from "./map_renderer.js";
 
 
 // Follow whatever host served the page, rather than a hardcoded localhost.
@@ -121,6 +126,13 @@ function handleTelemetryFrame(data) {
             renderMap(data);
             break;
 
+        // Robot position on its own, ~10 Hz. The map only arrives every two
+        // seconds, so without this the marker teleports between poses that
+        // far apart instead of moving.
+        case "pose":
+            updateRobotPose(data);
+            break;
+
         case "plan":
             updatePlan(data);
             break;
@@ -162,6 +174,13 @@ function handleTelemetryFrame(data) {
 
             break;
 
+        // Autonomous map building progress, twice a second while it runs.
+        case "explore_status":
+
+            handleExploreFrame(data);
+
+            break;
+
         // The gateway refused a teleop command because something is too close
         // in the direction of travel. It rate-limits these to one a second.
         case "drive_blocked":
@@ -197,6 +216,11 @@ function openSocket() {
         refreshMaps();
         refreshPaths();
         refreshZones();
+
+        // Not a list pull, but the same reasoning: a console that opened (or
+        // reconnected) while the AMR was mapping itself must not show Idle
+        // next to a robot that is visibly driving around.
+        refreshExploration();
 
     };
 
@@ -253,6 +277,7 @@ initPathPanel();
 initPathDraw();
 initZonePanel();
 initZoneDraw();
+initExplorePanel();
 initModeToolbar();
 initViews();
 

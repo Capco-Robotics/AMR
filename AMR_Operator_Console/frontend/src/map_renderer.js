@@ -34,6 +34,7 @@ const COLOURS = {
     goal: "#16a34a",
     robot: "#1f2937",
     blocked: "#dc2626",
+    explore: "#0d9488",
 };
 
 let latestMapFrame = null;
@@ -57,6 +58,10 @@ let drawStroke = [];
 let previewPath = [];
 let zones = [];
 let zoneDraft = [];
+
+// Where the map builder is currently driving, as [x, y] in map metres, or
+// null. Without it an unattended run looks like the robot wandering off.
+let exploreTarget = null;
 
 export const MODE_NONE = "none";
 export const MODE_GOAL = "goal";
@@ -115,8 +120,59 @@ export function setPreviewPath(points) {
     repaint();
 }
 
+/** The frontier the map builder is heading for, or null when it is idle. */
+export function setExploreTarget(point) {
+
+    const next =
+        Array.isArray(point) && point.length >= 2 ? point : null;
+
+    // Feedback arrives twice a second and the target only changes every few
+    // frontiers, so repainting on every frame would redraw the whole map for
+    // nothing.
+    const same =
+        (next === null && exploreTarget === null) ||
+        (next &&
+            exploreTarget &&
+            next[0] === exploreTarget[0] &&
+            next[1] === exploreTarget[1]);
+
+    if (same) {
+        return;
+    }
+
+    exploreTarget = next;
+
+    repaint();
+}
+
 export function hasMap() {
     return latestMapFrame !== null;
+}
+
+/**
+ * Move the robot marker, without touching the map underneath it.
+ *
+ * The pose used to arrive only as a field on the map frame, and slam_toolbox
+ * republishes the map every two seconds -- so the marker jumped between
+ * positions two seconds apart while RViz, reading tf at 20 Hz, showed it
+ * gliding. Under teleop that read as the console being broken. The gateway now
+ * streams a `pose` frame ten times a second and this applies it.
+ */
+export function updateRobotPose(frame) {
+
+    if (!latestMapFrame) {
+        // Nothing to draw on yet. The next map frame carries a pose of its
+        // own, so nothing is lost by dropping this one.
+        return;
+    }
+
+    latestMapFrame.pose = {
+        x: frame.x,
+        y: frame.y,
+        yaw: frame.yaw,
+    };
+
+    requestRepaint();
 }
 
 export function updatePlan(planFrame) {
@@ -461,6 +517,25 @@ function paintRuns(runs, scale, colour) {
     ctx.fill();
 }
 
+// Pose frames arrive faster than the display refreshes, and each repaint
+// redraws every wall run. Coalescing to one repaint per animation frame keeps
+// a 10 Hz pose stream from doing 10 full redraws a second on a phone.
+let repaintQueued = false;
+
+function requestRepaint() {
+
+    if (repaintQueued) {
+        return;
+    }
+
+    repaintQueued = true;
+
+    requestAnimationFrame(() => {
+        repaintQueued = false;
+        repaint();
+    });
+}
+
 function repaint() {
 
     if (!latestMapFrame) {
@@ -527,9 +602,45 @@ function repaint() {
         ctx.stroke();
     }
 
+    if (exploreTarget) {
+        paintExploreTarget(exploreTarget, dpr);
+    }
+
     if (latestMapFrame.pose) {
         paintRobot(latestMapFrame.pose, dpr);
     }
+}
+
+/**
+ * The frontier the map builder is driving to.
+ *
+ * An open ring rather than a filled dot, so it reads differently from the
+ * operator's own green goal marker at a glance -- this one is the robot's
+ * choice, not the operator's -- and so the unexplored edge underneath it stays
+ * visible through the middle.
+ */
+function paintExploreTarget(target, dpr) {
+
+    const pixel = worldToPixel(target[0], target[1]);
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 5 * dpr;
+
+    ctx.beginPath();
+    ctx.arc(pixel.x, pixel.y, 9 * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = COLOURS.explore;
+    ctx.lineWidth = 2.5 * dpr;
+
+    ctx.beginPath();
+    ctx.arc(pixel.x, pixel.y, 9 * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(pixel.x, pixel.y, 2.5 * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = COLOURS.explore;
+    ctx.fill();
 }
 
 function paintRobot(pose, dpr) {

@@ -50,6 +50,7 @@ def generate_launch_description():
     lidar_pkg = get_package_share_directory("amr_navigation_lidar")
     description_pkg = get_package_share_directory("amr_description")
     lift_pkg = get_package_share_directory("amr_lift")
+    explore_pkg = get_package_share_directory("amr_navigation_explore")
 
     description_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -110,6 +111,20 @@ def generate_launch_description():
         }.items(),
     )
 
+    # The map builder drives through Nav2, so it is only useful alongside it.
+    # It idles until the console sends an explore_area goal, so starting it
+    # here costs nothing on a run that never uses it.
+    explore_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                explore_pkg,
+                "launch",
+                "explore.launch.py",
+            )
+        ),
+        condition=IfCondition(LaunchConfiguration("explore")),
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument(
             "noise",
@@ -140,6 +155,15 @@ def generate_launch_description():
             "gateway",
             default_value="false",
             description="Also start amr_command's operator-console gateway.",
+        ),
+
+        DeclareLaunchArgument(
+            "explore",
+            default_value="false",
+            description=(
+                "Also start the frontier explorer behind the console's Map "
+                "Builder screen. Needs nav:=true to be able to drive."
+            ),
         ),
 
         description_launch,
@@ -199,6 +223,7 @@ def generate_launch_description():
         slam_launch,
         nav_launch,
         lift_launch,
+        explore_launch,
 
         Node(
             package="rviz2",
