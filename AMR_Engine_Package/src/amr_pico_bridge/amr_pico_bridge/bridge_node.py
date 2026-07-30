@@ -10,13 +10,20 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 
 from amr_msgs.msg import WheelSetpoints, EncoderTicks, PicoStatus
+from std_msgs.msg import Bool
 
 from amr_pico_bridge import protocol_codec
 from amr_pico_bridge.serial_transport import SerialTransport
 
-# TODO: from amr_msgs.srv import GetPicoStatus, TriggerEstop
+# TODO: from amr_msgs.srv import GetPicoStatus
 
 
 class PicoBridgeNode(Node):
@@ -37,6 +44,17 @@ class PicoBridgeNode(Node):
         self._rx_seq = None
         self._link_connected = True
 
+        # Set by /estop. This node is the only writer of drive_cmd, so
+        # dropping the setpoint here is what makes "stopped" mean stopped
+        # regardless of which node upstream is still publishing wheel
+        # setpoints -- the gateway can only silence the publishers it knows
+        # about.
+        self._estopped = False
+
+        # Ticks of _send_heartbeat since the stop was last repeated to the
+        # Pico. See the repeat in _send_heartbeat for why it is repeated.
+        self._estop_repeat = 0
+
         self.encoder_pub = self.create_publisher(
             EncoderTicks,
             "/encoder_ticks",
@@ -56,6 +74,24 @@ class PicoBridgeNode(Node):
             10,
         )
 
+        # Latched, matching amr_command's publisher: a bridge that restarts
+        # while the stop is engaged has to come up refusing to drive rather
+        # than forwarding the next setpoint that happens to arrive.
+        self.create_subscription(
+            Bool,
+            "/estop",
+            self._on_estop,
+            QoSProfile(
+                depth=1,
+                history=HistoryPolicy.KEEP_LAST,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+
+        # TODO: self.create_service(
+        #     GetPicoStatus, 'get_pico_status', self._handle_get_pico_status)
+
         self.heartbeat_timer = self.create_timer(
             0.1,
             self._send_heartbeat,
@@ -67,6 +103,10 @@ class PicoBridgeNode(Node):
         )
 
     def _on_wheel_setpoints(self, msg: WheelSetpoints):
+
+        if self._estopped:
+            return
+
         self._seq += 1
 
         message = {
@@ -100,9 +140,58 @@ class PicoBridgeNode(Node):
 
         self.transport.write(protocol_codec.encode(message))
 
-        # TODO:
-        # self.create_service(GetPicoStatus, 'get_pico_status', self._handle_get_pico_status)
-        # self.create_service(TriggerEstop, 'trigger_estop', self._handle_trigger_estop)
+        # A Pico that reset itself (its hardware WDT fired) comes back with a
+        # clear e-stop latch, and nothing else would ever tell it otherwise --
+        # /estop is latched on the ROS side, but that only replays to new
+        # subscribers, not to a microcontroller that rebooted. So the stop is
+        # repeated about once a second for as long as it is engaged, rather
+        # than sent once and trusted.
+        if self._estopped:
+
+            self._estop_repeat += 1
+
+            if self._estop_repeat >= 10:
+                self._estop_repeat = 0
+                self._send_estop(True)
+
+    def _on_estop(self, msg: Bool):
+
+        engage = bool(msg.data)
+
+        if engage == self._estopped:
+            return
+
+        self._estopped = engage
+        self._estop_repeat = 0
+
+        if engage:
+            self.get_logger().error(
+                "Emergency stop engaged -- drive commands to the Pico are "
+                "being dropped"
+            )
+        else:
+            self.get_logger().warning("Emergency stop released")
+
+        self._send_estop(engage)
+
+    def _send_estop(self, engage: bool):
+
+        if not self.transport.connected:
+            # Nothing useful to do here. The Pico's own heartbeat watchdog is
+            # what covers a dead serial link: no heartbeat reaches it either,
+            # so it trips and stops the motors on its own.
+            return
+
+        self._seq += 1
+
+        message = {
+            "type": protocol_codec.CMD_ESTOP,
+            "seq": self._seq,
+            "ts": time.time(),
+            "engage": engage,
+        }
+
+        self.transport.write(protocol_codec.encode(message))
 
     def _drain_rx(self):
         for line in self.transport.poll_lines():

@@ -28,6 +28,7 @@ from rclpy.qos import (
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
 
 from nav2_msgs.msg import CostmapFilterInfo
 
@@ -44,6 +45,17 @@ from amr_command.path_executor import PathExecutor
 from amr_command.exploration_client import ExplorationClient
 from amr_command import keepout_zones
 
+
+
+# Console frames that can put the robot in motion. Refused outright while the
+# emergency stop is engaged. Checked in one place rather than in each handler,
+# so a command added later cannot slip past by forgetting the check.
+_MOTION_FRAME_TYPES = frozenset({
+    "drive",
+    "nav_goal",
+    "nav_path",
+    "explore_start",
+})
 
 
 class OperatorInputArbiter:
@@ -75,7 +87,31 @@ class CommandGatewayNode(Node):
         super().__init__("amr_command")
         self.get_logger().info("CommandGatewayNode started")
 
-        self.websocket_server = WebsocketServer()
+        # --- emergency stop ---------------------------------------------------
+        #
+        # A latch, not a momentary button. While it is set, every frame that
+        # can move the robot is refused and a zero twist is held on /cmd_vel,
+        # so nothing that is still publishing there can restart the wheels.
+        #
+        # This is a *software* stop, and the console labels it as one. It
+        # cancels Nav2, drops teleop and tells the Pico to cut motor PWM --
+        # every path this stack has to the motors -- but it depends on the
+        # network, this process and the firmware all still working. A wedged
+        # RPi or a dead link leaves this button doing nothing; that class of
+        # failure is what the Pico's heartbeat watchdog (pico_firmware/
+        # watchdog.py) and, ultimately, a physical cut-off are for.
+        self._estopped = False
+
+        # Last time the ROS executor ran a callback. The websocket server runs
+        # on its own thread, so this node's ROS side can stop spinning while
+        # the socket stays happily open -- and the console would go on showing
+        # "Connected" against a robot that has stopped thinking. The heartbeat
+        # carries this so the console can say which of the two is wrong.
+        self._ros_alive_at = time.monotonic()
+
+        self.websocket_server = WebsocketServer(
+            status_provider=self._gateway_status,
+        )
         self.websocket_server._on_message_cb = self._on_ws_frame
 
         self.arbiter = OperatorInputArbiter()
@@ -272,10 +308,16 @@ class CommandGatewayNode(Node):
 
         self._publish_filter_info()
 
-        threading.Thread(
-            target=self._run_ws,
-            daemon=True,
-        ).start()
+        # Latched for the same reason the mask is: a pico bridge (or a state
+        # machine) that starts after the stop was engaged has to come up
+        # knowing about it, rather than coming up permissive.
+        self.estop_pub = self.create_publisher(
+            Bool,
+            "/estop",
+            latched,
+        )
+
+        self._publish_estop()
 
         self.cmd_vel_pub = self.create_publisher(
             Twist,
@@ -359,13 +401,115 @@ class CommandGatewayNode(Node):
             self.plan_callback,
             10,
         )
+        # Proves the ROS executor is still running callbacks. Four times a
+        # second against the two-second stall threshold below, so an executor
+        # that is merely busy is not reported as dead.
+        self.create_timer(
+            0.25,
+            self._mark_ros_alive,
+        )
+
         self.get_logger().info("CommandGatewayNode initialized")
         self._refresh_slam_mode()
         self.create_timer(
             2.0,
             self._refresh_slam_mode,
         )
-   
+
+        # Last, deliberately. This thread starts serving console frames the
+        # moment it is up, and _on_ws_frame reaches for publishers, the path
+        # executor and the e-stop latch -- all of which have to exist before
+        # the first frame can arrive, not merely before the first frame
+        # usually arrives.
+        threading.Thread(
+            target=self._run_ws,
+            daemon=True,
+        ).start()
+
+    # ---- liveness -------------------------------------------------------
+
+    # How long the executor may go without running a callback before the
+    # console is told the robot's ROS side has stalled.
+    _ROS_STALL_SEC = 2.0
+
+    def _mark_ros_alive(self):
+        self._ros_alive_at = time.monotonic()
+
+    def _gateway_status(self):
+        """Fields merged into every heartbeat frame.
+
+        Called from the websocket thread, so it only reads -- a float and a
+        bool, both of which are atomic enough in CPython for a status readout.
+        """
+
+        return {
+            "ros_ok": (
+                (time.monotonic() - self._ros_alive_at) < self._ROS_STALL_SEC
+            ),
+            "estop": self._estopped,
+        }
+
+    # ---- emergency stop -------------------------------------------------
+
+    def _publish_estop(self):
+
+        msg = Bool()
+        msg.data = self._estopped
+
+        self.estop_pub.publish(msg)
+
+    def _broadcast_estop(self, message=""):
+
+        self._broadcast({
+            "type": "estop_state",
+            "engaged": self._estopped,
+            "message": message,
+        })
+
+    def _set_estop(self, engage):
+
+        engage = bool(engage)
+
+        if engage == self._estopped:
+            # Still worth echoing. A second press is almost always an operator
+            # who is not sure the first one landed, and silence is the wrong
+            # answer to that question.
+            self._broadcast_estop()
+            return
+
+        self._estopped = engage
+
+        if engage:
+
+            self.get_logger().error(
+                "EMERGENCY STOP engaged by the operator"
+            )
+
+            # Order matters. Clear the held teleop command and get a zero
+            # twist onto the wire first, so the wheels stop on this call
+            # rather than on the next timer tick -- and so a release later
+            # does not replay whatever velocity was being held at the moment
+            # the operator hit stop.
+            self.arbiter.submit_command("estop", 0.0, 0.0)
+            self.cmd_vel_pub.publish(Twist())
+
+            self._publish_estop()
+
+            # Then take away the things that would otherwise keep publishing
+            # their own velocities over the top of that zero.
+            self.path_executor.cancel_path(
+                reason="Emergency stop",
+            )
+            self.exploration.stop(reason="Emergency stop")
+
+        else:
+
+            self.get_logger().warning("Emergency stop released")
+
+            self._publish_estop()
+
+        self._broadcast_estop()
+
 
     def plan_callback(self, msg):
 
@@ -411,6 +555,35 @@ class CommandGatewayNode(Node):
        try:
 
             frame_type = data.get("type")
+
+            if frame_type == "estop":
+
+                # Only an explicit, unambiguous false releases the latch.
+                # Missing, null, a string, a garbled value -- all engage. The
+                # failure mode of this particular frame has to be "stopped".
+                self._set_estop(data.get("engage", True) is not False)
+
+                return
+
+            if self._estopped and frame_type in _MOTION_FRAME_TYPES:
+
+                # The console's teleop loop repeats `drive` ten times a second
+                # whether or not a key is down, so announcing every refusal
+                # would flood both the log and the socket. Dropping it
+                # silently is the whole intent of the latch anyway; the
+                # deliberate one-shot commands below do get an answer.
+                if frame_type != "drive":
+
+                    self.get_logger().warning(
+                        f"Refused '{frame_type}': emergency stop is engaged"
+                    )
+
+                    self._broadcast_estop(
+                        "Emergency stop is engaged -- release it before "
+                        "driving the AMR"
+                    )
+
+                return
 
             if frame_type == "drive":
 
@@ -1771,6 +1944,15 @@ class CommandGatewayNode(Node):
         )
 
     def _publish_cmd_vel(self):
+
+        # While stopped, hold a zero twist on the topic rather than going
+        # quiet. Silence is not a stop: /cmd_vel has other publishers (Nav2's
+        # controller today, more later), and a differential base keeps driving
+        # on the last velocity it was handed until something says otherwise.
+        if self._estopped:
+            self.cmd_vel_pub.publish(Twist())
+            return
+
         linear, angular, last_command_time = self.arbiter.get_active_command()
 
         if (

@@ -75,6 +75,55 @@ next.
 
 ## Telemetry: gateway to console
 
+### Heartbeat Frame *(implemented)*
+
+Sent once a second to every client, and once more the moment a client
+connects.
+
+```json
+{"type": "heartbeat", "ts": 1785409689.18, "ros_ok": true, "estop": false}
+```
+
+**This frame is the only thing that makes "Connected" mean anything.** A
+browser `WebSocket` fires `onclose` only when the TCP connection is actually
+torn down; a gateway that goes away without closing it — Pi powered off, Wi-Fi
+dropped, robot driven out of range — leaves the client's socket in `OPEN`
+until the OS gives up retransmitting, which is minutes. The console showed
+"Connected" for all of it. RFC 6455 ping/pong cannot substitute: those are
+answered by the browser itself and are invisible to JavaScript.
+
+So the console measures liveness from frame arrivals instead. Silence for
+2.5 s shows "No signal"; silence for 5 s shows "Disconnected" and closes the
+socket by hand, so the reconnect backoff actually starts.
+
+| Field | Meaning |
+|---|---|
+| `ts` | Gateway wall clock, `time.time()`. Informational — the console times from local arrival, so the two clocks need not agree. |
+| `ros_ok` | `false` when the gateway's ROS executor has not run a callback for 2 s. The websocket server runs on its own thread, so a wedged ROS side leaves the socket perfectly healthy and the robot deaf; the console shows "AMR stalled" for this. |
+| `estop` | The authoritative emergency-stop latch. Carried here as well as in `estop_state` so a console that connects mid-stop converges within a second without having to ask. |
+| `status_error` | Present and `true` only if the gateway's status provider raised. The heartbeat still goes out — proving the link is alive matters more than the fields do. |
+
+An older console ignores the frame; an older gateway sends none, and the
+console treats an absent `ros_ok` as "no opinion" rather than "stalled".
+
+### Ping / Pong *(implemented)*
+
+```json
+{"type": "ping", "ts": 1785409689183}
+{"type": "pong", "ts": 1785409689183}
+```
+
+The console sends `ping` every 2 s and the server answers `pong` immediately,
+without involving the ROS callback — a pong claims that the socket
+round-trips, and nothing more. It is the outbound half of the check above: a
+half-open socket accepts `send()` without complaint, and only the missing
+answer reveals it. `ts` is echoed back unchanged.
+
+The server side has its own detection, independent of this: `websockets.serve`
+runs with `ping_interval=5` / `ping_timeout=5`, well under the library's 20 s
+default, because `broadcast()` walks the connections in sequence and a dead
+one holds up everyone else's telemetry until it is dropped.
+
 ### Map Frame *(implemented)*
 
 Broadcast on every `/map` update. `image` is a base64 PNG of the occupancy
@@ -202,6 +251,56 @@ so a client must repeat this frame to keep moving.
 ```
 
 Non-finite values are rejected.
+
+---
+
+## Emergency stop *(implemented)*
+
+The console's home screen. A latch, not a momentary button.
+
+```json
+{"type": "estop", "engage": true}
+{"type": "estop_state", "engaged": true, "message": ""}
+```
+
+`engage` is optional and **defaults to engaging**. Only an explicit JSON
+`false` releases the latch — a missing, null, or garbled value engages,
+because the failure mode of this particular frame has to be "stopped". The
+firmware applies the same rule to `estop_cmd` on the serial link.
+
+`estop_state` is broadcast on every change and echoed on a repeat press (a
+second press is usually an operator unsure the first one landed, and silence
+is the wrong answer to that). Its `message` is non-empty when the gateway is
+explaining a refusal rather than reporting a transition; the console shows
+that as a notice. The latch also rides on every heartbeat, which is what a
+console that connected mid-stop converges on.
+
+While engaged the gateway:
+
+1. refuses `drive`, `nav_goal`, `nav_path` and `explore_start` outright —
+   checked in one place, so a command added later cannot slip past by
+   forgetting the check. `drive` is refused *silently*, because the console's
+   teleop loop repeats it at 10 Hz whether or not a key is down;
+2. holds a zero `Twist` on `/cmd_vel` at 10 Hz rather than going quiet.
+   Silence is not a stop — the topic has other publishers, and a
+   differential base keeps driving on the last velocity it was handed;
+3. cancels the running Nav2 path and any map-building run;
+4. publishes `true` on a latched `std_msgs/Bool` `/estop`.
+
+`amr_pico_bridge` subscribes to `/estop` (latched, so a bridge that restarts
+mid-stop comes up refusing to drive) and does two things: it drops every
+`/wheel_setpoints` message instead of forwarding it — this node is the only
+writer of `drive_cmd`, so that is what makes "stopped" mean stopped no matter
+which node upstream is still publishing — and it sends `estop_cmd` to the
+Pico, repeated about once a second. The repeat matters because a Pico that
+reset itself (hardware WDT) comes back with a clear latch, and a latched ROS
+topic only replays to new subscribers, not to a microcontroller that rebooted.
+
+**This is a software stop and the button says so.** It covers every path this
+stack has to the motors, but it depends on the network, the RPi and the
+firmware all still working. A wedged RPi or a dead link leaves the button
+doing nothing; that class of failure is what the Pico's heartbeat watchdog
+(`pico_firmware/watchdog.py`) and, ultimately, a physical cut-off are for.
 
 ---
 

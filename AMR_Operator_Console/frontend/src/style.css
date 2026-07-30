@@ -223,6 +223,26 @@ kbd {
 
 #connection-pill[data-state="offline"]::before { background: var(--danger); }
 
+/* Two ways of being connected-but-not-really, and both are amber rather than
+   red: the socket is up, so this is a warning about the robot rather than a
+   report that the console has lost it.
+
+   "stale"    -- frames have stopped arriving; the link may be about to drop.
+   "degraded" -- heartbeats are arriving but the gateway says its own ROS side
+                 has stopped spinning, so the robot is not listening. */
+#connection-pill[data-state="stale"],
+#connection-pill[data-state="degraded"] {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+#connection-pill[data-state="stale"]::before,
+#connection-pill[data-state="degraded"]::before {
+  background: #d97706;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
 #connection-pill[data-state="connecting"] { color: var(--text-dim); }
 
 #connection-pill[data-state="connecting"]::before {
@@ -425,6 +445,94 @@ kbd {
   font-size: 0.82rem;
   color: var(--text-faint);
   text-align: center;
+}
+
+/* ---- emergency stop --------------------------------------------------- */
+
+/* Sized and coloured to be found without reading. It is the only element in
+   the console that is allowed to look like this, so that looking like this
+   means one thing. */
+
+.estop-block {
+  margin-bottom: 1.1rem;
+}
+
+.estop-btn {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  padding: 0.75rem 1rem;
+
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: #ffffff;
+
+  background: var(--danger);
+  border: 2px solid #991b1b;
+  border-radius: var(--radius-sm);
+
+  /* A physical lip, so the button reads as something you press rather than
+     something you tap past. */
+  box-shadow: 0 3px 0 #991b1b, var(--shadow-sm);
+
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s ease;
+}
+
+.estop-btn:hover { background: #b91c1c; }
+
+.estop-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #991b1b, var(--shadow-sm);
+}
+
+.estop-btn:focus-visible {
+  outline: 3px solid #991b1b;
+  outline-offset: 3px;
+}
+
+/* Engaged is a latch, so it has to read as a state the robot is *in* — not as
+   a button that happened to be pressed a moment ago. Hazard stripes rather
+   than a darker red, because "stopped" and "stop it" must not look alike. */
+.estop-btn.estop-engaged {
+  color: #7f1d1d;
+  background: repeating-linear-gradient(
+    45deg,
+    #fecaca 0 12px,
+    #fca5a5 12px 24px
+  );
+  border-color: var(--danger);
+  box-shadow: 0 3px 0 #fca5a5, var(--shadow-sm);
+  animation: estop-latched 1.1s ease-in-out infinite;
+}
+
+.estop-btn.estop-engaged:hover {
+  background: repeating-linear-gradient(
+    45deg,
+    #fecaca 0 12px,
+    #fca5a5 12px 24px
+  );
+}
+
+@keyframes estop-latched {
+  50% { border-color: #7f1d1d; }
+}
+
+.estop-status {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.estop-status-engaged {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* ---- home actions ----------------------------------------------------- */
@@ -910,6 +1018,13 @@ input[type="text"]:focus {
   .btn-pad {
     min-width: 84px;
     min-height: 66px;
+  }
+
+  /* Bigger on a phone, not smaller: this is the control most likely to be
+     pressed in a hurry, one-handed, while watching the robot. */
+  .estop-btn {
+    min-height: 84px;
+    font-size: 1.2rem;
   }
 
   .chip { display: none; }

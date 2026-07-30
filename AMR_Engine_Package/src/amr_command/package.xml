@@ -12,6 +12,9 @@
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
+  <!-- Bool, for the latched /estop topic the console's emergency stop
+       drives and amr_pico_bridge enforces. -->
+  <depend>std_msgs</depend>
   <depend>slam_toolbox</depend>
   <depend>rcl_interfaces</depend>
   <!-- NavigateThroughPoses (path execution) and its action result status,

@@ -41,6 +41,16 @@ def main():
     last_telemetry_ms = time.ticks_ms()
     serial_buffer = ""
 
+    # Latched by estop_cmd. Separate from the watchdog trip on purpose: that
+    # one means "the RPi went quiet", this one means "the RPi is talking and
+    # is telling us to stay stopped", and only the RPi clears it.
+    #
+    # Note this is still a software stop -- it depends on this firmware
+    # running. A physical cut-off between the driver and the motors is the
+    # only thing that survives a hung Pico; the hardware WDT in watchdog.py is
+    # the nearest this stack gets.
+    estop_engaged = False
+
     while True:
         # Feed hardware watchdog
         watchdog.feed_hardware_wdt()
@@ -70,8 +80,9 @@ def main():
 
                 if msg_type == "drive_cmd":
 
-                    # Ignore drive commands while watchdog is tripped
-                    if not watchdog.is_tripped():
+                    # Ignore drive commands while the watchdog is tripped or
+                    # an e-stop is latched
+                    if not watchdog.is_tripped() and not estop_engaged:
                         left_spd = float(msg.get("left", 0.0))
                         right_spd = float(msg.get("right", 0.0))
 
@@ -85,7 +96,13 @@ def main():
                     watchdog.on_rpi_message()
 
                 elif msg_type == "estop_cmd":
-                    motor_driver.stop()
+
+                    # Absent or malformed `engage` means engage. A truncated
+                    # e-stop frame has to stop the robot, never release it.
+                    estop_engaged = msg.get("engage", True) is not False
+
+                    if estop_engaged:
+                        motor_driver.stop()
 
             except (ValueError, KeyError, TypeError):
                 # Ignore malformed packets

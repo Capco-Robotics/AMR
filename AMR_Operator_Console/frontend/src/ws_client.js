@@ -36,6 +36,11 @@ import { initModeToolbar } from "./mode_toolbar.js";
 import { initViews } from "./view.js";
 import { notifyError, notifyInfo } from "./notice.js";
 import { renderMap, updatePlan, updateRobotPose } from "./map_renderer.js";
+import {
+    handleEstopFrame,
+    initEstopPanel,
+    setEstopEngaged,
+} from "./estop_panel.js";
 
 
 // Follow whatever host served the page, rather than a hardcoded localhost.
@@ -70,11 +75,62 @@ const WS_URL = gatewayUrl();
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 10000;
 
+// ---- link liveness -------------------------------------------------------
+//
+// "Connected" used to mean exactly one thing: the browser's WebSocket had
+// reached OPEN and had not fired onclose. That is a claim about a TCP socket,
+// not about the robot. A gateway that goes away without closing the
+// connection -- Pi powered off, Wi-Fi dropped, robot driven out of range --
+// leaves the socket in OPEN until the OS gives up retransmitting, which takes
+// minutes. For all of that time the pill said "Connected", teleop frames went
+// into a buffer that would never drain, and every panel sat on its last
+// value. That is the bug this section exists for.
+//
+// The protocol's own ping/pong cannot help: RFC 6455 pings are answered by
+// the browser and are invisible to JavaScript. So liveness is measured from
+// ordinary application frames instead. The gateway sends a `heartbeat` every
+// second, this client sends a `ping` and counts the `pong`, and silence is
+// what "disconnected" is actually derived from.
+//
+// Note the pill now reports two separate things, because they fail
+// separately: whether frames are arriving at all, and whether the gateway's
+// ROS side is still spinning behind them. The websocket server runs on its
+// own thread inside amr_command, so a wedged ROS executor leaves the socket
+// perfectly healthy and the robot perfectly deaf.
+const LINK_CHECK_MS = 500;
+
+// Two thresholds rather than one. A brief Wi-Fi hiccup on a tablet should
+// warn rather than flash "Disconnected" and tear down a socket that was about
+// to recover; five seconds of nothing, against a one-second heartbeat, is not
+// a hiccup.
+const STALE_MS = 2500;
+const DEAD_MS = 5000;
+
+const PING_INTERVAL_MS = 2000;
+
+const CONNECTION_STATES = {
+    connecting: ["Connecting", "Opening a websocket to the AMR"],
+    online: ["Connected", "The AMR is answering"],
+    stale: ["No signal", "The socket is open but the AMR has gone quiet"],
+    degraded: [
+        "AMR stalled",
+        "The gateway is answering but its ROS side has stopped running",
+    ],
+    offline: ["Disconnected", "No websocket to the AMR"],
+};
+
 export let websocket = null;
 
 let reconnectDelayMs = RECONNECT_MIN_MS;
 
 let reconnectTimer = null;
+
+// When the last frame of any kind arrived. 0 means "nothing yet".
+let lastFrameAt = 0;
+
+// Whether the gateway's most recent heartbeat said its ROS side was alive. A
+// gateway that sends no heartbeat at all has no opinion, so this stays true.
+let rosOk = true;
 
 export function connect(onMessage) {
   const socket = new WebSocket(WS_URL);
@@ -82,18 +138,19 @@ export function connect(onMessage) {
   return socket;
 }
 
+/** Send a frame. Returns false if there was no open socket to send it on. */
 export function sendMessage(message)
 {
 
     if(websocket === null)
     {
-        return;
+        return false;
     }
 
 
     if(websocket.readyState !== WebSocket.OPEN)
     {
-        return;
+        return false;
     }
 
 
@@ -101,10 +158,13 @@ export function sendMessage(message)
         JSON.stringify(message)
     );
 
+
+    return true;
+
 }
 
 
-function setConnectionState(state, label) {
+function setConnectionState(state, detail) {
 
     const pill = document.getElementById("connection-pill");
 
@@ -112,15 +172,99 @@ function setConnectionState(state, label) {
         return;
     }
 
+    const [label, explanation] = CONNECTION_STATES[state] || [state, ""];
+
     pill.dataset.state = state;
     pill.textContent = label;
 
+    // The pill has room for two words; the reason it is showing them goes in
+    // the tooltip rather than being left for the operator to guess.
+    pill.title = detail ? `${explanation} — ${detail}` : explanation;
+
+}
+
+
+/** Re-derive the pill from how long it has been since a frame arrived. */
+function refreshLinkState() {
+
+    if (websocket === null || websocket.readyState !== WebSocket.OPEN) {
+        // Not open: openSocket/onclose own the pill in that case, and
+        // overwriting it here would stamp on "Connecting".
+        return;
+    }
+
+    const silentMs = Date.now() - lastFrameAt;
+
+    if (silentMs > DEAD_MS) {
+
+        setConnectionState(
+            "offline",
+            `nothing received for ${Math.round(silentMs / 1000)} s`,
+        );
+
+        // The browser still calls this socket OPEN, and will go on doing so
+        // for minutes. Closing it by hand is what makes onclose fire and the
+        // reconnect ladder start.
+        try {
+            websocket.close();
+        } catch (error) {
+            // Nothing to do about it -- onclose still owns the retry.
+        }
+
+        return;
+    }
+
+    if (silentMs > STALE_MS) {
+
+        setConnectionState(
+            "stale",
+            `${(silentMs / 1000).toFixed(1)} s since the last frame`,
+        );
+
+        return;
+    }
+
+    setConnectionState(rosOk ? "online" : "degraded");
+}
+
+
+function applyHeartbeat(frame) {
+
+    // An older gateway sends no heartbeat and therefore no ros_ok; absent
+    // means "no opinion", not "stalled".
+    rosOk = frame.ros_ok !== false;
+
+    // The gateway's own view of the latch, which is the authoritative one --
+    // this is what confirms an operator's press actually landed, and what
+    // gets a console that connected mid-stop showing the right button.
+    if (typeof frame.estop === "boolean") {
+        setEstopEngaged(frame.estop);
+    }
+
+    refreshLinkState();
 }
 
 
 function handleTelemetryFrame(data) {
 
+    // Any frame at all is proof the link is alive. The heartbeat exists so
+    // that proof keeps arriving from a robot that is parked and quiet.
+    lastFrameAt = Date.now();
+
     switch (data.type) {
+
+        case "heartbeat":
+            applyHeartbeat(data);
+            break;
+
+        // Nothing to do with the contents -- having arrived is the whole
+        // message, and the timestamp above has already recorded that.
+        case "pong":
+            break;
+
+        case "estop_state":
+            handleEstopFrame(data);
+            break;
 
         case "map":
             renderMap(data);
@@ -196,17 +340,35 @@ function handleTelemetryFrame(data) {
 
 function openSocket() {
 
-    setConnectionState("connecting", "Connecting");
+    setConnectionState("connecting");
 
-    websocket = connect(handleTelemetryFrame);
+    // Held in a local as well, so every handler below can tell whether it
+    // belongs to the socket that is currently live. A socket superseded while
+    // it was still connecting -- which is exactly what the stale-link close
+    // above produces -- would otherwise fire onclose a moment later and drag
+    // the pill back to "Disconnected" over a healthy new connection.
+    const socket = connect(handleTelemetryFrame);
 
-    window.wsClient = websocket;
+    websocket = socket;
 
-    websocket.onopen = () => {
+    window.wsClient = socket;
+
+    socket.onopen = () => {
+
+        if (socket !== websocket) {
+            socket.close();
+            return;
+        }
 
         console.log("Connected to AMR websocket");
 
-        setConnectionState("online", "Connected");
+        // The gateway sends a heartbeat the moment a client connects, but not
+        // until the round trip completes; without this the watchdog would
+        // measure silence from whenever the last socket died.
+        lastFrameAt = Date.now();
+        rosOk = true;
+
+        setConnectionState("online");
 
         reconnectDelayMs = RECONNECT_MIN_MS;
 
@@ -224,18 +386,26 @@ function openSocket() {
 
     };
 
-    websocket.onclose = () => {
+    socket.onclose = () => {
 
-        setConnectionState("offline", "Disconnected");
+        if (socket !== websocket) {
+            return;
+        }
+
+        setConnectionState("offline");
 
         scheduleReconnect();
 
     };
 
-    websocket.onerror = () => {
+    socket.onerror = () => {
+
+        if (socket !== websocket) {
+            return;
+        }
 
         // onerror is always followed by onclose, which owns the retry.
-        setConnectionState("offline", "Disconnected");
+        setConnectionState("offline");
 
     };
 
@@ -264,6 +434,43 @@ function scheduleReconnect() {
 }
 
 
+/** Retry immediately instead of waiting out the backoff. */
+function reconnectNow() {
+
+    if (
+        websocket !== null
+        && (
+            websocket.readyState === WebSocket.OPEN
+            || websocket.readyState === WebSocket.CONNECTING
+        )
+    ) {
+        return;
+    }
+
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    reconnectDelayMs = RECONNECT_MIN_MS;
+
+    openSocket();
+}
+
+
+// A tablet waking from sleep, or a Wi-Fi network that has just come back,
+// should not sit at "Disconnected" for the rest of a ten-second backoff when
+// the browser has already told us the situation changed.
+window.addEventListener("online", reconnectNow);
+
+document.addEventListener("visibilitychange", () => {
+
+    if (document.visibilityState === "visible") {
+        reconnectNow();
+    }
+});
+
+
 // Bind panel DOM once, not per connection. Re-binding on every open would
 // stack duplicate listeners -- which is exactly what reconnecting now does.
 initTeleop();
@@ -272,6 +479,7 @@ initTeleopButtons(
     document.getElementById("teleop-pad")
 );
 
+initEstopPanel();
 initMapPanel();
 initPathPanel();
 initPathDraw();
@@ -300,6 +508,19 @@ initViews();
 });
 
 openSocket();
+
+// Both are harmless while disconnected: refreshLinkState returns early on a
+// socket that is not open, and sendMessage no-ops.
+setInterval(refreshLinkState, LINK_CHECK_MS);
+
+setInterval(() => {
+
+    // Not strictly needed while the gateway is sending heartbeats, but it is
+    // the half of the check that tests the *outbound* direction -- a socket
+    // can be half-open, and only a missing pong shows it.
+    sendMessage({ type: "ping", ts: Date.now() });
+
+}, PING_INTERVAL_MS);
 
 
 const sendPathButton =

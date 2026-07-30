@@ -44,6 +44,23 @@
       <!-- ============================ HOME ============================ -->
       <section class="card screen" data-screen="home">
 
+        <!-- Above the menu, deliberately. An operator reaching for this is
+             not going to navigate to it first. -->
+        <div class="estop-block">
+
+          <button id="estop-btn" class="estop-btn" type="button"
+                  aria-pressed="false" aria-describedby="estop-status">
+            EMERGENCY STOP
+          </button>
+
+          <p id="estop-status" class="estop-status" aria-live="polite">
+            Cuts drive power and cancels whatever the AMR is doing.
+          </p>
+
+        </div>
+
+        <h2 class="section-heading">Jobs</h2>
+
         <div class="action-grid">
 
           <button class="action" data-goto="explore" type="button">
