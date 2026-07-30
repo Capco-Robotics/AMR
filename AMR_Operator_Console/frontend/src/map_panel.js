@@ -1,7 +1,7 @@
 // Sends through ws_client rather than a captured socket, which would be the
 // stale pre-drop one after a reconnect.
 import { sendMessage } from "./ws_client.js";
-import { showToast } from "./toast.js";
+import { showToast } from "./notice.js";
 
 let mapListContainer = null;
 let mapNameInput = null;

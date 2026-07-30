@@ -1,33 +1,54 @@
-// Renders the SLAM occupancy grid (sent by amr_command's map_encoder as a
-// PNG/compact image) plus a robot-pose marker, the Nav2 plan, the operator's
-// freehand path, and any keep-out zones, onto the <canvas> 2D context.
+// Draws the SLAM occupancy grid and everything layered on it: the robot, the
+// Nav2 plan, the operator's freehand path, a previewed saved path, and
+// keep-out zones.
+//
+// The map is NOT drawn by blitting the PNG the gateway sends. That PNG is one
+// pixel per grid cell, and scaling it up to fill a laptop card turned every
+// wall into a ragged staircase of 4 px blocks. Instead the PNG is decoded
+// once into cell data, occupied cells are merged into horizontal runs, and
+// those runs are filled *and* stroked with round joins -- which renders a
+// two-cell-thick wall as one solid, continuous line at any zoom.
 import { websocket } from "./ws_client.js";
 
 const canvas = document.getElementById("map-canvas");
 const ctx = canvas.getContext("2d");
 
-let mapImage = null;
+// Grayscale values map_encoder emits, and the midpoints we classify against.
+const GRAY_OCCUPIED = 0;
+const GRAY_UNKNOWN = 205;
+const GRAY_FREE = 254;
+
+const OCCUPIED_MAX = 100;   // <= this is a wall
+const FREE_MIN = 230;       // >= this is open floor; between the two: unknown
+
+const COLOURS = {
+    free: "#ffffff",
+    unknown: "#e9edf2",
+    wall: "#33405a",
+    plan: "#2563eb",
+    stroke: "#f59e0b",
+    preview: "#7c3aed",
+    zone: "#ef4444",
+    zoneFill: "rgba(239, 68, 68, 0.22)",
+    zoneDraftFill: "rgba(239, 68, 68, 0.12)",
+    goal: "#16a34a",
+    robot: "#1f2937",
+};
 
 let latestMapFrame = null;
 
+// Horizontal runs of like cells, in grid coordinates: {row, from, to}.
+// Rebuilt only when a new map arrives, not on every repaint.
+let wallRuns = [];
+let freeRuns = [];
+
 let goalMarker = null;
-
 let planPoints = [];
-
-// The stroke the operator is drawing right now, as [x, y, theta] world
-// points. Painted as an overlay so the drag has visible feedback.
 let drawStroke = [];
-
-// Saved keep-out zones from the gateway, as {name, polygon} in world metres,
-// plus the polygon being traced right now.
+let previewPath = [];
 let zones = [];
-
 let zoneDraft = [];
 
-// Exactly one pointer tool can be live at a time. This used to be two
-// independent booleans (goalMode, drawMode) that had to be manually guarded
-// against each other -- a third tool made that untenable, and the guard was
-// already leaking (ending a path stroke could also fire off a nav_goal).
 export const MODE_NONE = "none";
 export const MODE_GOAL = "goal";
 export const MODE_PATH = "path";
@@ -45,7 +66,6 @@ export function isMode(mode) {
     return interactionMode === mode;
 }
 
-/** Register a callback fired whenever the active tool changes. */
 export function onModeChange(listener) {
     modeListeners.push(listener);
 }
@@ -54,8 +74,7 @@ export function setInteractionMode(mode) {
 
     interactionMode = mode;
 
-    canvas.style.cursor =
-        mode === MODE_NONE ? "default" : "crosshair";
+    canvas.style.cursor = mode === MODE_NONE ? "default" : "crosshair";
 
     modeListeners.forEach((listener) => listener(mode));
 
@@ -63,16 +82,12 @@ export function setInteractionMode(mode) {
 }
 
 export function setDrawStroke(points) {
-
     drawStroke = points || [];
-
     repaint();
 }
 
 export function setZones(nextZones) {
-
     zones = nextZones || [];
-
     repaint();
 }
 
@@ -81,61 +96,34 @@ export function getZones() {
 }
 
 export function setZoneDraft(polygon) {
-
     zoneDraft = polygon || [];
+    repaint();
+}
+
+/** A saved path shown without being driven, for the Run Path screen. */
+export function setPreviewPath(points) {
+    previewPath = points || [];
+    repaint();
+}
+
+export function hasMap() {
+    return latestMapFrame !== null;
+}
+
+export function updatePlan(planFrame) {
+
+    planPoints = planFrame.points || [];
+
+    if (planPoints.length === 0) {
+        goalMarker = null;
+    }
 
     repaint();
 }
 
-/**
- * Convert a pointer event's client coordinates to world metres, using the
- * latest map's origin/resolution. Returns null when no map has arrived yet
- * (there is no frame of reference to convert into).
- */
-export function canvasToWorld(clientX, clientY) {
+// ---- coordinates --------------------------------------------------------
 
-    if (!latestMapFrame) {
-        return null;
-    }
-
-    const rect = canvas.getBoundingClientRect();
-
-    if (!rect.width || !rect.height) {
-        return null;
-    }
-
-    // Client coords -> backing-store coords (the element is laid out by CSS
-    // and the backing store is scaled by the device pixel ratio).
-    const pixelX =
-        (clientX - rect.left) * (canvas.width / rect.width);
-
-    const pixelY =
-        (clientY - rect.top) * (canvas.height / rect.height);
-
-    // ...then backing-store coords -> map cells -> world metres.
-    const scale = cellScale();
-
-    return {
-        x:
-            latestMapFrame.origin.x +
-            (pixelX / scale) * latestMapFrame.resolution,
-        y:
-            latestMapFrame.origin.y +
-            ((canvas.height - pixelY) / scale) * latestMapFrame.resolution,
-        pixelX: pixelX,
-        pixelY: pixelY,
-    };
-}
-
-/**
- * Canvas pixels per map cell.
- *
- * The backing store is sized to the *display*, not to the occupancy grid (see
- * resizeBackingStore), so the map is scaled up on draw and every overlay is
- * drawn at its natural pixel size. Sizing the backing store to the grid
- * instead -- a few hundred px stretched across a desktop card -- meant lines
- * and labels were rendered tiny and then magnified into a blur.
- */
+/** Canvas pixels per grid cell. */
 function cellScale() {
 
     if (!latestMapFrame || !latestMapFrame.width) {
@@ -158,12 +146,35 @@ function worldToPixel(worldX, worldY) {
     };
 }
 
-/**
- * Match the backing store to the element's on-screen size (times the device
- * pixel ratio, so it is sharp on a retina tablet). The wrapper carries the
- * map's aspect ratio, which keeps the element box a fixed shape and stops
- * this from feeding back into layout.
- */
+export function canvasToWorld(clientX, clientY) {
+
+    if (!latestMapFrame) {
+        return null;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+
+    if (!rect.width || !rect.height) {
+        return null;
+    }
+
+    const pixelX = (clientX - rect.left) * (canvas.width / rect.width);
+    const pixelY = (clientY - rect.top) * (canvas.height / rect.height);
+
+    const scale = cellScale();
+
+    return {
+        x:
+            latestMapFrame.origin.x +
+            (pixelX / scale) * latestMapFrame.resolution,
+        y:
+            latestMapFrame.origin.y +
+            ((canvas.height - pixelY) / scale) * latestMapFrame.resolution,
+        pixelX: pixelX,
+        pixelY: pixelY,
+    };
+}
+
 function resizeBackingStore() {
 
     if (!latestMapFrame || !latestMapFrame.width) {
@@ -177,15 +188,14 @@ function resizeBackingStore() {
         wrap.style.aspectRatio =
             `${latestMapFrame.width} / ${latestMapFrame.height}`;
 
-        // The stylesheet caps the map's height by bounding its *width* with
-        // this ratio. Capping the height directly would squash the box out of
-        // the aspect ratio the canvas fills, and the world-to-pixel maths
-        // assumes one uniform scale for both axes.
+        // The stylesheet caps map height by bounding its *width* through this
+        // ratio; capping height directly would squash the box out of the
+        // aspect ratio the canvas fills, and the pointer maths assumes one
+        // uniform scale on both axes.
         wrap.style.setProperty(
             "--map-aspect",
             String(latestMapFrame.width / latestMapFrame.height),
         );
-
     }
 
     const cssWidth = canvas.clientWidth;
@@ -210,153 +220,220 @@ function resizeBackingStore() {
     return true;
 }
 
-export function hasMap() {
-    return latestMapFrame !== null;
-}
+// ---- map decoding -------------------------------------------------------
 
-export function updatePlan(planFrame) {
+const decoder = document.createElement("canvas");
+const decoderCtx = decoder.getContext("2d", { willReadFrequently: true });
 
-    planPoints = planFrame.points || [];
+/**
+ * Turn the decoded map image into horizontal runs of wall and of free space.
+ *
+ * Runs rather than per-cell rects: a 400x400 map is 160k cells, and painting
+ * each one as its own rectangle every frame is both slow and what produced
+ * the visible seams between neighbouring cells. A row of wall becomes one
+ * rectangle, which fills as a single unbroken block.
+ */
+function extractRuns(image, width, height) {
 
-    if (
-        planPoints.length === 0
-    ) {
-        goalMarker = null;
+    decoder.width = width;
+    decoder.height = height;
+
+    decoderCtx.clearRect(0, 0, width, height);
+    decoderCtx.drawImage(image, 0, 0);
+
+    const data = decoderCtx.getImageData(0, 0, width, height).data;
+
+    const walls = [];
+    const free = [];
+
+    for (let row = 0; row < height; row += 1) {
+
+        // The encoder ships OccupancyGrid rows bottom-up, and PNG row 0 is
+        // the top, so image row (height-1-row) is grid row `row`.
+        const imageRow = height - 1 - row;
+
+        let wallFrom = -1;
+        let freeFrom = -1;
+
+        for (let col = 0; col <= width; col += 1) {
+
+            let isWall = false;
+            let isFree = false;
+
+            if (col < width) {
+                const value = data[(imageRow * width + col) * 4];
+                isWall = value <= OCCUPIED_MAX;
+                isFree = value >= FREE_MIN;
+            }
+
+            if (isWall) {
+                if (wallFrom < 0) wallFrom = col;
+            } else if (wallFrom >= 0) {
+                walls.push({ row, from: wallFrom, to: col });
+                wallFrom = -1;
+            }
+
+            if (isFree) {
+                if (freeFrom < 0) freeFrom = col;
+            } else if (freeFrom >= 0) {
+                free.push({ row, from: freeFrom, to: col });
+                freeFrom = -1;
+            }
+        }
     }
 
-    repaint();
-
+    wallRuns = walls;
+    freeRuns = free;
 }
 
 export function renderMap(mapFrame) {
 
-    // Task 5: Safe initialization
     if (!mapFrame || !mapFrame.image) {
         return;
     }
+
     latestMapFrame = mapFrame;
 
-    // The backing store follows the element, not the grid; this only needs to
-    // run here because a new map can change the aspect ratio.
     resizeBackingStore();
 
     const image = new Image();
 
-    // Decode off the critical path, then hand the finished bitmap to repaint.
-    // Everything that actually paints lives in repaint() so that overlays (the
-    // in-progress stroke, the goal marker) can be redrawn at pointer rate
-    // without re-decoding the map PNG each time.
     image.onload = () => {
 
-        mapImage = image;
+        extractRuns(image, mapFrame.width, mapFrame.height);
 
         repaint();
-
     };
 
-    image.src =
-        `data:image/png;base64,${mapFrame.image}`;
+    image.src = `data:image/png;base64,${mapFrame.image}`;
+}
+
+// ---- painting -----------------------------------------------------------
+
+function paintRuns(runs, scale, colour) {
+
+    ctx.fillStyle = colour;
+    ctx.beginPath();
+
+    runs.forEach((run) => {
+
+        const x = run.from * scale;
+        const width = (run.to - run.from) * scale;
+
+        // Grid row 0 is the bottom of the world, canvas y grows downward.
+        const y = canvas.height - (run.row + 1) * scale;
+
+        // +1 device pixel of overlap closes the hairline seams that
+        // sub-pixel run boundaries leave between adjacent rows.
+        ctx.rect(x, y, width + 1, scale + 1);
+    });
+
+    ctx.fill();
 }
 
 function repaint() {
 
-    if (!mapImage || !latestMapFrame) {
+    if (!latestMapFrame) {
         return;
     }
 
-    const mapFrame = latestMapFrame;
+    const scale = cellScale();
+    const dpr = window.devicePixelRatio || 1;
 
-    // Overlay sizes are in device pixels, so they have to follow the DPR the
-    // backing store was built at or they come out hairline on a retina panel.
-    const scale = window.devicePixelRatio || 1;
+    // Unknown space is the backdrop; free and occupied are painted onto it.
+    ctx.fillStyle = COLOURS.unknown;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw occupancy map.
-    // A ROS OccupancyGrid is row-major BOTTOM-UP: grid row 0 is the lowest
-    // world y, with y increasing upward. The encoder ships those rows in the
-    // same order, but PNG/canvas row 0 is the TOP -- so drawing it as-is
-    // renders the map upside-down relative to the robot-pose math below
-    // (which correctly treats world +y as up). Flip vertically on draw so the
-    // map, the marker, and RViz all agree. (Root cause is really the encoder
-    // emitting bottom-up rows; if that is ever fixed, remove this flip.)
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(0, canvas.height);
-    ctx.scale(1, -1);
+    paintRuns(freeRuns, scale, COLOURS.free);
 
-    // Occupancy grids are chunky by nature; interpolating them on the way up
-    // to display resolution just makes the walls mushy.
-    ctx.imageSmoothingEnabled = false;
+    // Fill *and* stroke: the stroke with a round join is what turns a
+    // staircase of cells into one continuous wall, and thickens a
+    // single-cell wall enough to read at a glance.
+    ctx.fillStyle = COLOURS.wall;
+    ctx.strokeStyle = COLOURS.wall;
+    ctx.lineWidth = Math.max(1.5 * dpr, scale * 0.75);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
 
-    ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
+    ctx.beginPath();
 
-    // Keep-out zones sit directly on the map, under every other overlay --
-    // they are terrain, not something the operator is steering.
-    zones.forEach((zone) => paintZone(zone.polygon, zone.name, false, scale));
+    wallRuns.forEach((run) => {
+
+        const x = run.from * scale;
+        const width = (run.to - run.from) * scale;
+        const y = canvas.height - (run.row + 1) * scale;
+
+        ctx.rect(x, y, width, scale);
+    });
+
+    ctx.fill();
+    ctx.stroke();
+
+    zones.forEach((zone) => paintZone(zone.polygon, zone.name, false, dpr));
 
     if (zoneDraft.length > 0) {
-        paintZone(zoneDraft, null, true, scale);
+        paintZone(zoneDraft, null, true, dpr);
     }
 
-    // Task 7: Draw robot marker. A map can arrive before the first odom frame,
-    // so treat the pose as optional -- the overlays below still need painting.
-    if (mapFrame.pose) {
-
-        const robot = worldToPixel(mapFrame.pose.x, mapFrame.pose.y);
-
-        const yaw = mapFrame.pose.yaw || 0;
-
-        // Robot body
-        ctx.beginPath();
-        ctx.arc(robot.x, robot.y, 6 * scale, 0, Math.PI * 2);
-        ctx.fillStyle = "#f87171";
-        ctx.fill();
-        ctx.strokeStyle = "#7f1d1d";
-        ctx.lineWidth = 2 * scale;
-        ctx.stroke();
-
-        // Heading line
-        const lineLength = 18 * scale;
-
-        ctx.beginPath();
-        ctx.moveTo(robot.x, robot.y);
-        ctx.lineTo(
-            robot.x + Math.cos(yaw) * lineLength,
-            robot.y - Math.sin(yaw) * lineLength,
-        );
-        ctx.strokeStyle = "#f87171";
-        ctx.lineWidth = 2.5 * scale;
-        ctx.stroke();
-
-    }
-
-    // Nav2's computed plan.
-    strokePolyline(planPoints, "#22d3ee", 2.5 * scale);
-
-    // The operator's in-progress / simplified freehand stroke.
-    strokePolyline(drawStroke, "#fb923c", 2.5 * scale);
+    strokePolyline(previewPath, COLOURS.preview, 3 * dpr, [8 * dpr, 5 * dpr]);
+    strokePolyline(planPoints, COLOURS.plan, 3 * dpr);
+    strokePolyline(drawStroke, COLOURS.stroke, 3 * dpr);
 
     if (goalMarker) {
 
         ctx.beginPath();
-
-        ctx.arc(
-            goalMarker.x,
-            goalMarker.y,
-            6 * scale,
-            0,
-            Math.PI * 2
-        );
-
-        ctx.fillStyle = "#4ade80";
-
+        ctx.arc(goalMarker.x, goalMarker.y, 7 * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = COLOURS.goal;
         ctx.fill();
-
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2 * dpr;
+        ctx.stroke();
     }
 
+    if (latestMapFrame.pose) {
+        paintRobot(latestMapFrame.pose, dpr);
+    }
 }
 
-function paintZone(polygon, name, isDraft, scale) {
+function paintRobot(pose, dpr) {
+
+    const robot = worldToPixel(pose.x, pose.y);
+    const yaw = pose.yaw || 0;
+
+    const radius = 9 * dpr;
+
+    // Body and heading arrow are one filled shape with a white outline, so
+    // the marker reads the same over white floor and over a dark wall.
+    ctx.beginPath();
+    ctx.moveTo(
+        robot.x + Math.cos(yaw) * radius * 2.4,
+        robot.y - Math.sin(yaw) * radius * 2.4,
+    );
+    ctx.lineTo(
+        robot.x + Math.cos(yaw + 2.3) * radius * 1.35,
+        robot.y - Math.sin(yaw + 2.3) * radius * 1.35,
+    );
+    ctx.lineTo(
+        robot.x + Math.cos(yaw - 2.3) * radius * 1.35,
+        robot.y - Math.sin(yaw - 2.3) * radius * 1.35,
+    );
+    ctx.closePath();
+
+    ctx.lineWidth = 3 * dpr;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+
+    ctx.fillStyle = COLOURS.robot;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(robot.x, robot.y, radius * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+}
+
+function paintZone(polygon, name, isDraft, dpr) {
 
     if (!polygon || polygon.length === 0) {
         return;
@@ -373,27 +450,25 @@ function paintZone(polygon, name, isDraft, scale) {
         } else {
             ctx.lineTo(pixel.x, pixel.y);
         }
-
     });
 
-    // A draft is shown open (the operator is still tracing it); a stored zone
+    // A draft stays open -- the operator is still tracing it. A stored zone
     // is the closed area Nav2 is actually enforcing.
     if (!isDraft) {
         ctx.closePath();
     }
 
     if (polygon.length >= 3) {
-        ctx.fillStyle = isDraft
-            ? "rgba(239, 68, 68, 0.18)"
-            : "rgba(239, 68, 68, 0.30)";
+        ctx.fillStyle = isDraft ? COLOURS.zoneDraftFill : COLOURS.zoneFill;
         ctx.fill();
     }
 
-    ctx.strokeStyle = isDraft ? "#fca5a5" : "#ef4444";
-    ctx.lineWidth = 2 * scale;
+    ctx.strokeStyle = COLOURS.zone;
+    ctx.lineWidth = 2.5 * dpr;
+    ctx.lineJoin = "round";
 
     if (isDraft) {
-        ctx.setLineDash([6 * scale, 4 * scale]);
+        ctx.setLineDash([7 * dpr, 5 * dpr]);
     }
 
     ctx.stroke();
@@ -403,26 +478,21 @@ function paintZone(polygon, name, isDraft, scale) {
 
         const anchor = worldToPixel(polygon[0][0], polygon[0][1]);
 
-        const x = anchor.x + 6 * scale;
-        const y = anchor.y - 6 * scale;
+        const x = anchor.x + 7 * dpr;
+        const y = anchor.y - 7 * dpr;
 
-        ctx.font = `600 ${13 * scale}px system-ui, sans-serif`;
+        ctx.font = `600 ${13 * dpr}px system-ui, sans-serif`;
 
-        // The label sits on top of the zone's own red fill and whatever the
-        // map has underneath it, so it needs its own contrast rather than
-        // relying on either.
-        ctx.lineWidth = 3 * scale;
-        ctx.strokeStyle = "rgba(9, 12, 18, 0.85)";
+        ctx.lineWidth = 3 * dpr;
+        ctx.strokeStyle = "#ffffff";
         ctx.strokeText(name, x, y);
 
-        ctx.fillStyle = "#fee2e2";
+        ctx.fillStyle = "#b91c1c";
         ctx.fillText(name, x, y);
-
     }
-
 }
 
-function strokePolyline(points, colour, width) {
+function strokePolyline(points, colour, width, dash) {
 
     if (!points || points.length === 0) {
         return;
@@ -439,29 +509,30 @@ function strokePolyline(points, colour, width) {
         } else {
             ctx.lineTo(pixel.x, pixel.y);
         }
-
     });
 
     ctx.strokeStyle = colour;
     ctx.lineWidth = width;
-    ctx.stroke();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
 
+    if (dash) {
+        ctx.setLineDash(dash);
+    }
+
+    ctx.stroke();
+    ctx.setLineDash([]);
 }
 
-// The backing store tracks the element's on-screen size, so a window resize
-// (or a tablet rotating) has to rebuild it -- otherwise the map is drawn at
-// the old resolution and stretched.
 window.addEventListener("resize", () => {
 
     resizeBackingStore();
 
     repaint();
-
 });
 
 canvas.addEventListener("click", (event) => {
 
-    // One exclusive mode means no cross-tool guard is needed here any more.
     if (!isMode(MODE_GOAL)) {
         return;
     }
@@ -472,13 +543,9 @@ canvas.addEventListener("click", (event) => {
         return;
     }
 
-    goalMarker = {
-        x: world.pixelX,
-        y: world.pixelY,
-    };
+    goalMarker = { x: world.pixelX, y: world.pixelY };
 
     if (websocket) {
-
         websocket.send(
             JSON.stringify({
                 type: "nav_goal",
@@ -487,9 +554,7 @@ canvas.addEventListener("click", (event) => {
                 theta: 0.0,
             })
         );
-
     }
 
     repaint();
-
 });

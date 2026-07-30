@@ -5,7 +5,7 @@
 // state: a zone that only exists in the browser is a zone Nav2 is not
 // enforcing, and showing it would be worse than showing nothing.
 import { sendMessage } from "./ws_client.js";
-import { showToast } from "./toast.js";
+import { showToast } from "./notice.js";
 import { clearDraft, getDraft } from "./zone_draw.js";
 import { setZones } from "./map_renderer.js";
 
@@ -121,10 +121,7 @@ function drawZoneList(zones) {
     zoneList.innerHTML = "";
 
     if (zoneCount) {
-
-        zoneCount.textContent =
-            zones.length === 1 ? "1 zone" : `${zones.length} zones`;
-
+        zoneCount.textContent = String(zones.length);
     }
 
     if (zones.length === 0) {

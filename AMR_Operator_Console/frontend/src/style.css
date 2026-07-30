@@ -1,48 +1,60 @@
-/* AMR Operator Console.
+/* AMR Operator Console — light theme.
  *
- * Committed to a dark theme rather than following the OS: this runs next to a
- * dark occupancy map, often on a tablet on the shop floor, and a light chrome
- * around a near-black canvas is hard to read under warehouse lighting.
+ * Deliberately light: the map itself is now white floor with dark walls (the
+ * renderer draws it, rather than blitting the grid image), and wrapping that
+ * in dark chrome made the map read as a bright hole in the page. A calm grey
+ * page with white cards keeps the map the brightest thing on screen, which is
+ * where the operator should be looking.
  *
- * Colour roles are fixed across the console so the map legend means something:
- * cyan = Nav2's plan, orange = the operator's path, red = keep-out, green =
- * goal. Nothing else may use those hues.
+ * Colour roles are fixed so the map is legible without a legend:
+ * blue = Nav2's plan, amber = the path being drawn, violet = a previewed
+ * saved path, red = keep-out, green = goal.
  */
 
 :root {
-  --bg: #0b1017;
-  --surface: #131a24;
-  --surface-raised: #1b2431;
-  --border: #263141;
-  --border-strong: #35435a;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-sunken: #f7f9fc;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
 
-  --text: #e6edf6;
-  --text-dim: #93a2b8;
-  --text-faint: #64748b;
+  --text: #16202e;
+  --text-dim: #5b6b80;
+  --text-faint: #8496ab;
 
-  --accent: #38bdf8;
-  --accent-strong: #0ea5e9;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: #eff4ff;
 
-  --goal: #4ade80;
-  --path: #fb923c;
+  --path: #f59e0b;
+  --preview: #7c3aed;
   --zone: #ef4444;
+  --goal: #16a34a;
 
-  --danger: #f87171;
-  --danger-bg: #3b1418;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
 
-  --radius: 10px;
-  --radius-sm: 7px;
+  --radius: 14px;
+  --radius-sm: 10px;
 
   --tap: 44px;
 
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 1px 2px rgba(15, 32, 56, 0.06);
+  --shadow: 0 1px 3px rgba(15, 32, 56, 0.08), 0 8px 24px rgba(15, 32, 56, 0.06);
 
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Setting `display` on a class beats the UA sheet's `[hidden] {display:none}`,
+   so .icon-btn and .screen would stay visible when hidden. Every hide in this
+   app goes through the attribute, so make it win. */
+[hidden] {
+  display: none !important;
 }
 
 body {
@@ -59,68 +71,108 @@ h1, h2 {
   font-weight: 600;
 }
 
+kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 0.05em 0.35em;
+
+  font: inherit;
+  font-size: 0.8em;
+  text-align: center;
+
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
 /* ---- top bar ---------------------------------------------------------- */
 
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.75rem;
 
-  padding: 0.75rem 1.25rem;
-  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding: 0.7rem 1.1rem;
+  padding-top: max(0.7rem, env(safe-area-inset-top));
 
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 
-  /* Connection state has to stay visible: on a phone the map is most of the
-     screen, and "am I still talking to the robot" matters more than any of
-     it. */
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
+#screen-title {
+  flex: 1;
+  min-width: 0;
 
-.brand h1 {
   font-size: 1.05rem;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.brand-mark {
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: -0.5rem;
+  padding: 0;
+
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.icon-btn:hover {
+  background: var(--surface-sunken);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chevron-left {
   width: 10px;
-  height: 22px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  height: 10px;
+  border-left: 2.5px solid var(--text);
+  border-bottom: 2.5px solid var(--text);
+  transform: rotate(45deg) translate(1px, -1px);
 }
 
 .topbar-status {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  flex: none;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
 
-  padding: 0.3rem 0.7rem;
+  padding: 0.25rem 0.6rem;
 
-  font-size: 0.75rem;
-  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-faint);
 
-  background: var(--surface-raised);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: 999px;
+  white-space: nowrap;
 }
 
 .chip strong {
@@ -133,47 +185,44 @@ h1, h2 {
 #connection-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
 
-  padding: 0.3rem 0.75rem 0.3rem 0.6rem;
+  padding: 0.25rem 0.65rem 0.25rem 0.55rem;
 
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  white-space: nowrap;
 
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface-raised);
+  background: var(--surface-sunken);
 }
 
 #connection-pill::before {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
 }
 
 #connection-pill[data-state="online"] {
-  color: var(--goal);
-  border-color: rgba(74, 222, 128, 0.35);
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
 }
 
-#connection-pill[data-state="online"]::before {
-  background: var(--goal);
-}
+#connection-pill[data-state="online"]::before { background: var(--goal); }
 
 #connection-pill[data-state="offline"] {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.35);
+  background: var(--danger-soft);
+  border-color: #fecaca;
 }
 
-#connection-pill[data-state="offline"]::before {
-  background: var(--danger);
-}
+#connection-pill[data-state="offline"]::before { background: var(--danger); }
 
-#connection-pill[data-state="connecting"] {
-  color: var(--text-dim);
-}
+#connection-pill[data-state="connecting"] { color: var(--text-dim); }
 
 #connection-pill[data-state="connecting"]::before {
   background: var(--text-dim);
@@ -184,21 +233,107 @@ h1, h2 {
   50% { opacity: 0.25; }
 }
 
+/* ---- notices ---------------------------------------------------------- */
+
+#notice-area {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 3.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+
+  width: min(34rem, calc(100vw - 1.5rem));
+
+  /* The strip must never swallow taps meant for the map underneath; only the
+     notices themselves are interactive. */
+  pointer-events: none;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+
+  padding: 0.65rem 0.6rem 0.65rem 0.9rem;
+
+  font-size: 0.88rem;
+  font-weight: 500;
+
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.notice-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.notice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.65;
+
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.notice-close:hover { opacity: 1; }
+
+.notice-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.notice-success {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.notice-info {
+  background: var(--accent-soft);
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
 /* ---- layout ----------------------------------------------------------- */
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 380px;
   gap: 1rem;
 
   padding: 1rem;
   align-items: start;
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.panel-area {
   min-width: 0;
 }
 
@@ -206,99 +341,42 @@ h1, h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
   padding: 1rem;
 }
 
-.card h2,
-.card > summary {
+.section-heading {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 
-  font-size: 0.8rem;
-  font-weight: 600;
+  margin: 1.1rem 0 0.6rem;
+
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-dim);
-
-  margin-bottom: 0.85rem;
-}
-
-.card > summary {
-  /* The whole header is the hit target, and it needs to be a comfortable one
-     on a touchscreen -- not just the little disclosure triangle. */
-  min-height: 32px;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.card > summary::-webkit-details-marker {
-  display: none;
-}
-
-/* Own chevron, so it can sit on the correct side and rotate. */
-.card > summary::after {
-  content: "";
-
-  width: 7px;
-  height: 7px;
-  margin-left: auto;
-
-  border-right: 2px solid var(--text-faint);
-  border-bottom: 2px solid var(--text-faint);
-  transform: rotate(45deg) translate(-2px, -2px);
-
-  transition: transform 0.15s ease;
-}
-
-details.card[open] > summary::after {
-  transform: rotate(-135deg) translate(-2px, -2px);
-}
-
-.card > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  border-radius: 4px;
-}
-
-/* A collapsed panel is just its header, so drop the padding it was holding
-   open for content that is no longer shown. */
-details.card:not([open]) {
-  padding-bottom: 0.35rem;
-}
-
-details.card:not([open]) > summary {
-  margin-bottom: 0;
-}
-
-/* The badge sits before the chevron rather than being pushed to the edge. */
-.card > summary .badge {
-  margin-left: auto;
-}
-
-.card > summary .badge + * {
-  margin-left: 0;
-}
-
-.help {
-  margin: 0 0 0.85rem;
-  font-size: 0.82rem;
   color: var(--text-faint);
 }
 
+.section-heading:first-child {
+  margin-top: 0;
+}
+
+.help {
+  margin: 0 0 0.9rem;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+
 .badge {
-  padding: 0.15rem 0.5rem;
+  padding: 0.05rem 0.45rem;
 
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0;
-  text-transform: none;
   color: var(--text-dim);
 
-  background: var(--surface-raised);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: 999px;
 }
@@ -308,40 +386,24 @@ details.card:not([open]) > summary {
 .map-card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.mode-hint {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--text-faint);
-  min-height: 1.2em;
+  gap: 0.6rem;
+  padding: 0.75rem;
 }
 
 .canvas-wrap {
   /* The renderer sets aspect-ratio here from the incoming map, and the canvas
-     fills this box exactly. Doing it this way round means the element's CSS
-     size never depends on the backing-store size the renderer is about to
-     compute from it -- otherwise sizing one would relayout the other. */
+     fills this box exactly, so the element's CSS size never depends on the
+     backing-store size the renderer computes from it. */
   aspect-ratio: 1 / 1;
   width: 100%;
 
-  /* Keeps a big map from filling the whole viewport. Bounding the width (via
-     the aspect ratio the renderer sets) rather than the height preserves the
-     box shape the canvas fills. */
-  max-width: calc(68vh * var(--map-aspect, 1));
+  /* Bound the height by bounding the width through that ratio; capping height
+     directly would squash the box out of shape, and the pointer maths assumes
+     one uniform scale on both axes. */
+  max-width: calc(74vh * var(--map-aspect, 1));
   margin: 0 auto;
 
-  background:
-    linear-gradient(rgba(56, 189, 248, 0.05), rgba(56, 189, 248, 0.05)),
-    #070a0f;
-
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -349,9 +411,6 @@ details.card:not([open]) > summary {
 
 #map-canvas {
   display: block;
-
-  /* Fill the card: at grid resolution a 400-cell map is a postage stamp on a
-     desktop, and the operator is drawing on it with a finger. */
   width: 100%;
   height: 100%;
 
@@ -359,70 +418,81 @@ details.card:not([open]) > summary {
   touch-action: none;
 }
 
-.swatch {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  flex: none;
+.mode-hint {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  text-align: center;
 }
 
-.swatch-goal { background: var(--goal); }
-.swatch-path { background: var(--path); }
-.swatch-zone { background: var(--zone); }
+/* ---- home actions ----------------------------------------------------- */
 
-.label-short {
-  display: none;
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
 }
 
-/* ---- draw controls ---------------------------------------------------- */
-
-.draw-controls {
-  display: none;
+.action {
+  display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  align-items: flex-start;
+  gap: 0.15rem;
 
-  padding: 0.85rem;
+  min-height: 92px;
+  padding: 0.8rem;
 
-  background: var(--surface-raised);
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.12s ease, background 0.12s ease,
+              transform 0.08s ease;
 }
 
-.draw-controls.visible {
-  display: flex;
+.action:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
 }
 
-.slider-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.action:active {
+  transform: translateY(1px);
 }
 
-.slider-row label {
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  white-space: nowrap;
+.action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.slider-row input[type="range"] {
-  flex: 1;
-  min-width: 120px;
-  accent-color: var(--path);
-  height: var(--tap);
+.action-dot {
+  width: 12px;
+  height: 12px;
+  margin-bottom: 0.35rem;
+  border-radius: 4px;
 }
 
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.82rem;
-  color: var(--text);
-  min-width: 4.5rem;
-  text-align: right;
+.dot-zone { background: var(--zone); }
+.dot-path { background: var(--path); }
+.dot-run  { background: var(--preview); }
+.dot-rc   { background: var(--accent); }
+
+.action-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.2;
 }
 
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.action-sub {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  line-height: 1.25;
 }
 
 /* ---- controls --------------------------------------------------------- */
@@ -431,7 +501,7 @@ details.card:not([open]) > summary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
 
   min-height: var(--tap);
   padding: 0.5rem 0.95rem;
@@ -441,24 +511,18 @@ details.card:not([open]) > summary {
   font-weight: 500;
   color: var(--text);
 
-  background: var(--surface-raised);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
 
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.btn:hover {
-  background: #222d3d;
-}
-
-.btn:active {
-  transform: translateY(1px);
-}
+.btn:hover { background: var(--surface-sunken); }
+.btn:active { transform: translateY(1px); }
 
 .btn:focus-visible {
   outline: 2px solid var(--accent);
@@ -466,39 +530,41 @@ details.card:not([open]) > summary {
 }
 
 .btn-small {
-  min-height: 36px;
+  min-height: 38px;
   padding: 0.3rem 0.7rem;
   font-size: 0.8rem;
 }
 
+.btn-wide { flex: 1; }
+
 .btn-primary {
-  background: var(--accent-strong);
+  background: var(--accent);
   border-color: var(--accent);
-  color: #04121c;
+  color: #ffffff;
   font-weight: 600;
 }
 
 .btn-primary:hover {
-  background: #38bdf8;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .btn-danger {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: var(--danger-bg);
+  background: var(--danger-soft);
+  border-color: #fecaca;
 }
 
-.btn-danger:hover {
-  background: #4a1a1f;
-}
+.btn-danger:hover { background: #fee2e2; }
 
-/* An armed tool is the single most important piece of state on this screen:
-   it changes what a tap on the map does. */
+/* An armed tool changes what a tap on the map does, so it needs to be
+   unmistakable. */
 .btn-tool.active {
-  background: rgba(56, 189, 248, 0.14);
+  background: var(--accent-soft);
   border-color: var(--accent);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+  color: var(--accent-strong);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 input[type="text"] {
@@ -506,20 +572,18 @@ input[type="text"] {
   min-width: 0;
   min-height: var(--tap);
 
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 0.75rem;
 
   font: inherit;
   font-size: 0.88rem;
   color: var(--text);
 
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
 }
 
-input[type="text"]::placeholder {
-  color: var(--text-faint);
-}
+input[type="text"]::placeholder { color: var(--text-faint); }
 
 input[type="text"]:focus {
   outline: 2px solid var(--accent);
@@ -533,23 +597,63 @@ input[type="text"]:focus {
   margin-bottom: 0.6rem;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+#draw-controls {
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.75rem;
+
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.slider-row label {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  min-width: 100px;
+  accent-color: var(--path);
+  height: var(--tap);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  min-width: 4.2rem;
+  text-align: right;
+}
+
 /* ---- lists ------------------------------------------------------------ */
 
 .list {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  margin-top: 0.75rem;
 }
 
 .list-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
 
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.5rem 0.4rem 0.7rem;
 
-  background: var(--surface-raised);
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -561,19 +665,20 @@ input[type="text"]:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.88rem;
+  font-weight: 500;
 }
 
 .list-meta {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-faint);
   white-space: nowrap;
 }
 
 .empty-hint {
   margin: 0;
-  padding: 0.6rem;
+  padding: 0.9rem 0.6rem;
 
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   color: var(--text-faint);
   text-align: center;
 
@@ -581,18 +686,25 @@ input[type="text"]:focus {
   border-radius: var(--radius-sm);
 }
 
-/* ---- status readouts -------------------------------------------------- */
+/* ---- status ----------------------------------------------------------- */
 
 .status-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
+
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.75rem;
+
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .status-label {
-  font-size: 0.78rem;
-  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
@@ -603,15 +715,7 @@ input[type="text"]:focus {
   text-align: right;
 }
 
-.status-error {
-  color: var(--danger);
-}
-
-.readout:not(:empty) {
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-}
+.status-error { color: var(--danger); }
 
 /* ---- teleop ----------------------------------------------------------- */
 
@@ -620,6 +724,8 @@ input[type="text"]:focus {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+
+  padding: 0.5rem 0;
 
   touch-action: none;
   user-select: none;
@@ -631,52 +737,15 @@ input[type="text"]:focus {
 }
 
 .btn-pad {
-  min-width: 64px;
-  min-height: 52px;
-  font-size: 1rem;
+  min-width: 78px;
+  min-height: 62px;
+  font-size: 1.05rem;
+  background: var(--surface-sunken);
 }
 
-/* ---- toast ------------------------------------------------------------ */
-
-#toast {
-  position: fixed;
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  right: 1.25rem;
-  z-index: 9999;
-
-  max-width: min(28rem, calc(100vw - 2.5rem));
-  padding: 0.7rem 1rem;
-
-  font-size: 0.88rem;
-  font-weight: 500;
-
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
-
-  opacity: 0;
-  transform: translateY(8px);
-  pointer-events: none;
-  visibility: hidden;
-
-  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
-}
-
-#toast.toast-visible {
-  opacity: 1;
-  transform: translateY(0);
-  visibility: visible;
-}
-
-.toast-success {
-  background: #14532d;
-  color: #dcfce7;
-  border: 1px solid #22c55e;
-}
-
-.toast-error {
-  background: var(--danger-bg);
-  color: #fee2e2;
-  border: 1px solid var(--danger);
+.btn-pad:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 /* ---- responsive ------------------------------------------------------- */
@@ -685,14 +754,6 @@ input[type="text"]:focus {
 
   .layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sidebar {
-    /* Two columns of panels below the map reads better than one long
-       column on a landscape tablet. */
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    align-items: start;
   }
 
 }
@@ -704,59 +765,30 @@ input[type="text"]:focus {
     gap: 0.6rem;
   }
 
-  .topbar {
-    padding: 0.6rem 0.85rem;
-    padding-top: max(0.6rem, env(safe-area-inset-top));
-  }
+  .topbar { padding: 0.6rem 0.85rem; }
 
-  .brand h1 {
-    font-size: 0.95rem;
-  }
+  #screen-title { font-size: 1rem; }
 
-  .card {
-    padding: 0.85rem;
-  }
+  .card { padding: 0.85rem; }
 
-  /* One row of three, so the map starts higher up the screen. */
-  .toolbar .btn {
-    flex: 1 1 0;
-    padding: 0.5rem 0.4rem;
-  }
+  .map-card { padding: 0.5rem; }
 
-  .label-full {
-    display: none;
-  }
-
-  .label-short {
-    display: inline;
-  }
-
-  /* A phone is held portrait, so the map can have more of the screen than the
-     landscape-friendly cap allows. */
+  /* Portrait phone: the map can take more height than the landscape cap. */
   .canvas-wrap {
-    max-width: calc(58vh * var(--map-aspect, 1));
+    max-width: calc(52vh * var(--map-aspect, 1));
   }
 
-  /* Long status text wraps under its label instead of squeezing it. */
-  .status-row {
-    flex-wrap: wrap;
-  }
-
-  .status-value {
-    text-align: left;
+  #notice-area {
+    top: calc(env(safe-area-inset-top) + 3.4rem);
+    width: calc(100vw - 1.2rem);
   }
 
   .btn-pad {
-    min-width: 76px;
-    min-height: 58px;
+    min-width: 84px;
+    min-height: 66px;
   }
 
-  #toast {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
-    max-width: none;
-  }
+  .chip { display: none; }
 
 }
 

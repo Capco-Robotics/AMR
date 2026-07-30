@@ -111,22 +111,14 @@ export function initPathDraw() {
 
     const epsilonValue = document.getElementById("epsilon-value");
 
-    // #draw-controls is hidden by default: Send Path / Redraw / Clear / Stop
-    // and the epsilon slider only mean anything while the path tool is live.
-    const drawControls = document.getElementById("draw-controls");
-
     if (!canvas) {
         return;
     }
 
-    // The toolbar owns which tool is selected; this just follows it, so a
-    // mode change from anywhere (Redraw, or arming the zone tool) leaves the
-    // controls in the right state.
+    // The draw controls now live on the New Path screen, so they are visible
+    // whenever that screen is, and do not need showing and hiding here. Only
+    // the in-progress drag has to be abandoned when the tool is put away.
     onModeChange((mode) => {
-
-        if (drawControls) {
-            drawControls.classList.toggle("visible", mode === MODE_PATH);
-        }
 
         if (mode !== MODE_PATH) {
             drawing = false;

@@ -1,5 +1,6 @@
 import { sendMessage } from "./ws_client.js";
-import { showToast } from "./toast.js";
+import { notifyError, showToast } from "./notice.js";
+import { setPreviewPath } from "./map_renderer.js";
 import {
     loadPath,
     getCleanPath
@@ -9,6 +10,12 @@ let pathName = null;
 let pathStatus = null;
 
 let loadedPaths = {};
+
+// Set when Run was pressed on a path whose points we do not have yet, so the
+// path_data reply knows to drive it rather than just preview it. Previously
+// Run on a fresh page just said "Load path first", which made the button look
+// broken -- the operator had no reason to know Load was a prerequisite.
+let pendingRun = null;
 
 export function initPathPanel() {
 
@@ -137,10 +144,23 @@ export function renderPathStatus(frame){
             : label;
 
 
+    const failed = PATH_STATE_FAILED.includes(frame.state);
+
+
     pathStatus.className =
-        PATH_STATE_FAILED.includes(frame.state)
-            ? "status-value status-error"
-            : "status-value";
+        failed ? "status-value status-error" : "status-value";
+
+
+    // A refusal is an event, not a state. Turning this line red said nothing
+    // to an operator looking at the map -- and on the Run Path screen the
+    // line is not even visible from the other screens. Announce it instead.
+    if(failed){
+
+        notifyError(
+            frame.message || `Path ${label.toLowerCase()}`
+        );
+
+    }
 
 }
 
@@ -180,12 +200,19 @@ function drawPathList(paths){
 
 
 
-        const loadBtn=document.createElement("button");
+        const previewBtn=document.createElement("button");
 
-        loadBtn.className="btn btn-small";
-        loadBtn.textContent="Load";
+        previewBtn.className="btn btn-small";
+        previewBtn.textContent="Preview";
 
-        loadBtn.onclick=()=>{
+        previewBtn.onclick=()=>{
+
+            const points = loadedPaths[name];
+
+            if (points) {
+                setPreviewPath(points);
+                return;
+            }
 
             sendMessage({
 
@@ -232,7 +259,7 @@ function drawPathList(paths){
 
 
         row.appendChild(label);
-        row.appendChild(loadBtn);
+        row.appendChild(previewBtn);
         row.appendChild(runBtn);
         row.appendChild(deleteBtn);
 
@@ -254,14 +281,24 @@ function runPath(name){
 
     if(!points){
 
-        showToast(
-            "Load path first",
-            false
-        );
+        // Fetch it, then drive it, instead of making the operator press
+        // Preview first and guess that that was the missing step.
+        pendingRun = name;
+
+        sendMessage({
+
+            type:"path_load",
+
+            name:name
+
+        });
 
         return;
 
     }
+
+
+    setPreviewPath(points);
 
 
     sendMessage({
@@ -304,10 +341,22 @@ export function handlePathFrame(frame){
 
             loadPath(frame.points);
 
-            showToast(
-                "Path Loaded",
-                true
-            );
+            setPreviewPath(frame.points);
+
+            if(pendingRun === frame.name){
+
+                pendingRun = null;
+
+                sendMessage({
+                    type:"nav_path",
+                    points:frame.points,
+                });
+
+            } else {
+
+                showToast(`Previewing "${frame.name}"`, true);
+
+            }
 
             break;
 

@@ -1,9 +1,13 @@
-// Owns the map's tool selection: Set Goal / Draw Path / Draw Zone.
+// Binds the three map-tool toggles to the renderer's exclusive mode.
 //
-// Selection is exclusive and lives in map_renderer, so the buttons here are
-// only a view of it -- anything else that changes the mode (finishing a zone,
-// hitting Redraw) lights the right button without having to know about the
-// toolbar.
+// The tools no longer live together on one toolbar -- each belongs to the
+// screen that uses it (Trace New on Zones, Draw on New Path, Send to a Point
+// on Home). view.js arms the right mode when a screen opens; these buttons
+// let the operator turn it off, or turn it back on after a save.
+//
+// The buttons are only a view of the mode, so anything else that changes it
+// (finishing a trace, switching screens, hitting Redraw) lights the correct
+// one without needing to know this module exists.
 import {
     MODE_GOAL,
     MODE_NONE,
@@ -20,16 +24,7 @@ const BUTTONS = [
     ["zone-toggle", MODE_ZONE],
 ];
 
-const HINTS = {
-    [MODE_NONE]: "Pick a tool to interact with the map.",
-    [MODE_GOAL]: "Tap the map to send the AMR to a single goal.",
-    [MODE_PATH]: "Hold and drag to draw a path, then Send Path.",
-    [MODE_ZONE]: "Hold and drag to trace a keep-out zone, then name and save it.",
-};
-
 export function initModeToolbar() {
-
-    const hint = document.getElementById("mode-hint");
 
     BUTTONS.forEach(([id, mode]) => {
 
@@ -41,8 +36,8 @@ export function initModeToolbar() {
 
         button.addEventListener("click", () => {
 
-            // Tapping the live tool turns it off, so the operator can pan or
-            // read the map without arming anything.
+            // Tapping the armed tool disarms it, so the operator can read the
+            // map without a stray tap sending the robot somewhere.
             setInteractionMode(
                 getInteractionMode() === mode ? MODE_NONE : mode
             );
@@ -63,14 +58,6 @@ export function initModeToolbar() {
 
         });
 
-        if (hint) {
-            hint.textContent = HINTS[mode] || HINTS[MODE_NONE];
-        }
-
     });
-
-    if (hint) {
-        hint.textContent = HINTS[MODE_NONE];
-    }
 
 }

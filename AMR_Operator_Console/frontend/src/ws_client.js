@@ -28,7 +28,8 @@ import {
 } from "./zone_panel.js";
 import { initZoneDraw } from "./zone_draw.js";
 import { initModeToolbar } from "./mode_toolbar.js";
-import { initPanels } from "./panels.js";
+import { initViews } from "./view.js";
+import { notifyError, notifyInfo } from "./notice.js";
 import { renderMap, updatePlan } from "./map_renderer.js";
 
 
@@ -161,6 +162,14 @@ function handleTelemetryFrame(data) {
 
             break;
 
+        // The gateway refused a teleop command because something is too close
+        // in the direction of travel. It rate-limits these to one a second.
+        case "drive_blocked":
+
+            notifyError(data.message || "Drive blocked by an obstacle");
+
+            break;
+
     }
 
 }
@@ -245,7 +254,25 @@ initPathDraw();
 initZonePanel();
 initZoneDraw();
 initModeToolbar();
-initPanels();
+initViews();
+
+// Lift control is deliberately UI-only for now: amr_lift exists but nothing
+// is wired from the console to it yet, and a button that silently does
+// nothing is worse than one that says so.
+[
+    ["lift-raise-btn", "Raise"],
+    ["lift-lower-btn", "Lower"],
+].forEach(([id, action]) => {
+
+    const button = document.getElementById(id);
+
+    if (button) {
+        button.addEventListener("click", () => {
+            notifyInfo(`${action} load: not wired to amr_lift yet`);
+        });
+    }
+
+});
 
 openSocket();
 

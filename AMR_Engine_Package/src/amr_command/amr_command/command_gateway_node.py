@@ -14,6 +14,7 @@ import json
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -23,6 +24,7 @@ from rclpy.qos import (
 
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from sensor_msgs.msg import LaserScan
 
 from nav2_msgs.msg import CostmapFilterInfo
 
@@ -153,6 +155,32 @@ class CommandGatewayNode(Node):
                 filename="zones.recovered.json",
             )
 
+        # --- teleop collision guard ---------------------------------------
+        #
+        # Nav2 already refuses to drive an autonomous goal into an obstacle:
+        # the costmaps mark it and DWB's BaseObstacle critic scores those
+        # trajectories out. Teleop has no such protection -- it goes straight
+        # from a browser button to /cmd_vel, bypassing Nav2 entirely -- so an
+        # operator holding "forward" drives the robot into a wall. This is
+        # that missing check.
+
+        self.declare_parameter("collision_stop_distance", 0.35)
+        self.declare_parameter("collision_sector_deg", 60.0)
+
+        self.collision_stop_distance = float(
+            self.get_parameter("collision_stop_distance").value
+        )
+
+        self.collision_sector_rad = math.radians(
+            float(self.get_parameter("collision_sector_deg").value)
+        )
+
+        self._latest_scan = None
+
+        # Rate-limits the "blocked" frame so holding the button against a
+        # wall does not flood the socket.
+        self._last_block_notice = 0.0
+
         # Geometry of the most recent /map, so a zone edit can be rasterised
         # onto the same grid without waiting for the next map update.
         self._latest_map_info = None
@@ -243,6 +271,13 @@ class CommandGatewayNode(Node):
             Odometry,
             "/odom",
             self._odom_callback,
+            10,
+        )
+
+        self.scan_sub = self.create_subscription(
+            LaserScan,
+            "/scan",
+            self._scan_callback,
             10,
         )
 
@@ -1264,6 +1299,116 @@ class CommandGatewayNode(Node):
         )
     
 
+    # A lidar that has gone quiet for longer than this is treated as failed.
+    _SCAN_TIMEOUT_SEC = 1.0
+
+    def _scan_callback(self, msg):
+        self._latest_scan = msg
+
+    def _closest_in_sector(self, centre_rad, half_width_rad):
+        """Nearest valid scan return within a sector, or None.
+
+        The sector is measured in the scan's own frame. The lidar is mounted
+        forward of base_link, so this is an approximation of the distance from
+        the robot -- deliberately the conservative direction for a forward
+        stop, and the stop distance below is set with that in mind.
+        """
+
+        scan = self._latest_scan
+
+        if scan is None:
+            return None
+
+        closest = None
+
+        for i, distance in enumerate(scan.ranges):
+
+            # inf/NaN mean "nothing seen", and returns outside the sensor's
+            # rated band are noise, not obstacles.
+            if not math.isfinite(distance):
+                continue
+
+            if distance < scan.range_min or distance > scan.range_max:
+                continue
+
+            angle = scan.angle_min + i * scan.angle_increment
+
+            # Wrap into [-pi, pi] before comparing, so a sector spanning the
+            # 0/2pi seam is not silently empty.
+            delta = math.atan2(
+                math.sin(angle - centre_rad),
+                math.cos(angle - centre_rad),
+            )
+
+            if abs(delta) > half_width_rad:
+                continue
+
+            if closest is None or distance < closest:
+                closest = distance
+
+        return closest
+
+    def _scan_age(self):
+        """Seconds since the last scan, or None if none has ever arrived."""
+
+        if self._latest_scan is None:
+            return None
+
+        return (
+            self.get_clock().now()
+            - Time.from_msg(self._latest_scan.header.stamp)
+        ).nanoseconds / 1e9
+
+    def _collision_block(self, linear):
+        """Reason the requested motion is unsafe, or None if it is fine.
+
+        Only translation is gated. Turning on the spot is how an operator
+        gets *out* of a corner, so blocking it would trap the robot against
+        whatever it just drove into.
+        """
+
+        if abs(linear) < 1e-3:
+            return None
+
+        if self.collision_stop_distance <= 0.0:
+            return None
+
+        age = self._scan_age()
+
+        # No scan has *ever* arrived: there is no lidar on this robot (or it
+        # was never started), and refusing to drive would make teleop useless
+        # on a bench rig. Allow it -- the operator is looking at the robot.
+        #
+        # But a scan that arrived and then stopped is a sensor fault, and
+        # driving on the last thing a dead lidar happened to see is exactly
+        # the case this guard exists to prevent. Refuse that one.
+        if age is not None and age > self._SCAN_TIMEOUT_SEC:
+            return (
+                f"Lidar stale ({age:.1f} s since last scan) -- "
+                f"drive blocked"
+            )
+
+        # Forward travel looks ahead; reverse looks behind.
+        centre = 0.0 if linear > 0 else math.pi
+
+        closest = self._closest_in_sector(
+            centre,
+            self.collision_sector_rad / 2.0,
+        )
+
+        if closest is None:
+            return None
+
+        if closest >= self.collision_stop_distance:
+            return None
+
+        direction = "ahead" if linear > 0 else "behind"
+
+        return (
+            f"Obstacle {closest:.2f} m {direction} -- "
+            f"drive blocked below {self.collision_stop_distance:.2f} m"
+        )
+
     def _publish_cmd_vel(self):
         linear, angular, last_command_time = self.arbiter.get_active_command()
 
@@ -1272,6 +1417,27 @@ class CommandGatewayNode(Node):
             or (time.monotonic() - last_command_time) > 0.5
         ):
             return
+
+        blocked = self._collision_block(linear)
+
+        if blocked is not None:
+
+            # Drop the translation but keep the turn, so the operator can
+            # rotate away from what they hit.
+            linear = 0.0
+
+            now = time.monotonic()
+
+            if (now - self._last_block_notice) > 1.0:
+
+                self._last_block_notice = now
+
+                self.get_logger().warning(blocked)
+
+                self._broadcast({
+                    "type": "drive_blocked",
+                    "message": blocked,
+                })
 
         msg = Twist()
         msg.linear.x = linear

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f7fa">
   <title>AMR Operator Console</title>
   <link rel="stylesheet" href="src/style.css">
 </head>
@@ -10,263 +11,221 @@
 
   <header class="topbar">
 
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <h1>AMR Operator Console</h1>
-    </div>
+    <button id="back-btn" class="icon-btn" type="button" aria-label="Back" hidden>
+      <span class="chevron-left" aria-hidden="true"></span>
+    </button>
+
+    <h1 id="screen-title">AMR Console</h1>
 
     <div class="topbar-status">
-
-      <span class="chip">
-        SLAM
-        <strong id="slam-mode" data-mode="Unknown">Unknown</strong>
-      </span>
-
+      <span class="chip">SLAM <strong id="slam-mode">Unknown</strong></span>
       <span id="connection-pill" data-state="connecting">Connecting</span>
-
     </div>
 
   </header>
 
+  <!-- Transient messages land here, at the top of the page, rather than
+       turning a panel's own text red where they are easy to miss. -->
+  <div id="notice-area" aria-live="polite"></div>
+
   <main class="layout">
 
     <section class="map-area">
-
       <div class="card map-card">
-
-        <div class="toolbar" role="toolbar" aria-label="Map tools">
-
-          <!-- Two labels per tool: the full wording explains itself on a
-               laptop, the short one keeps all three tools on one row on a
-               phone instead of wrapping the toolbar to two. -->
-          <button id="goal-toggle" class="btn btn-tool" type="button">
-            <span class="swatch swatch-goal" aria-hidden="true"></span>
-            <span class="label-full">Set Goal</span>
-            <span class="label-short">Goal</span>
-          </button>
-
-          <button id="draw-toggle" class="btn btn-tool" type="button">
-            <span class="swatch swatch-path" aria-hidden="true"></span>
-            <span class="label-full">Draw Path</span>
-            <span class="label-short">Path</span>
-          </button>
-
-          <button id="zone-toggle" class="btn btn-tool" type="button">
-            <span class="swatch swatch-zone" aria-hidden="true"></span>
-            <span class="label-full">Draw Keep-out Zone</span>
-            <span class="label-short">Zone</span>
-          </button>
-
-        </div>
-
-        <p id="mode-hint" class="mode-hint">Pick a tool to interact with the map.</p>
-
         <div class="canvas-wrap">
           <canvas id="map-canvas" width="600" height="600"></canvas>
         </div>
+        <p id="mode-hint" class="mode-hint"></p>
+      </div>
+    </section>
 
-        <div id="draw-controls" class="draw-controls">
+    <aside class="panel-area">
 
-          <div class="slider-row">
+      <!-- ============================ HOME ============================ -->
+      <section class="card screen" data-screen="home">
 
-            <label for="epsilon-slider">Path detail</label>
+        <div class="action-grid">
 
-            <input
-                id="epsilon-slider"
-                type="range"
-                min="0.02"
-                max="0.40"
-                step="0.01"
-                value="0.10">
+          <button class="action" data-goto="zones" type="button">
+            <span class="action-dot dot-zone" aria-hidden="true"></span>
+            <span class="action-label">Keep-out Zones</span>
+            <span class="action-sub">Areas the AMR won't enter</span>
+          </button>
 
-            <output id="epsilon-value" class="mono">0.10 m</output>
+          <button class="action" data-goto="path-new" type="button">
+            <span class="action-dot dot-path" aria-hidden="true"></span>
+            <span class="action-label">New Path</span>
+            <span class="action-sub">Draw a route to follow</span>
+          </button>
 
-          </div>
+          <button class="action" data-goto="path-run" type="button">
+            <span class="action-dot dot-run" aria-hidden="true"></span>
+            <span class="action-label">Run Path</span>
+            <span class="action-sub">Pick a saved route</span>
+          </button>
 
-          <div class="button-row">
-
-            <button id="send-path-btn" class="btn btn-primary" type="button">
-              Send Path
-            </button>
-
-            <button id="stop-path-btn" class="btn btn-danger" type="button">
-              Stop
-            </button>
-
-            <button id="redraw-path-btn" class="btn" type="button">
-              Redraw
-            </button>
-
-            <button id="clear-path-btn" class="btn" type="button">
-              Clear
-            </button>
-
-          </div>
+          <button class="action" data-goto="rc" type="button">
+            <span class="action-dot dot-rc" aria-hidden="true"></span>
+            <span class="action-label">Remote Control</span>
+            <span class="action-sub">Drive it by hand</span>
+          </button>
 
         </div>
 
-      </div>
+        <h2 class="section-heading">Load</h2>
 
-    </section>
+        <div class="button-row">
+          <button id="lift-raise-btn" class="btn btn-wide" type="button">
+            Raise Load
+          </button>
+          <button id="lift-lower-btn" class="btn btn-wide" type="button">
+            Lower Load
+          </button>
+        </div>
 
-    <aside class="sidebar">
+        <h2 class="section-heading">More</h2>
 
-      <!-- Panels are <details> so a phone can fold away what it is not using;
-           panels.js collapses the non-essential ones on a narrow screen at
-           first load. Path Execution stays open -- it is the one thing an
-           operator watching a run needs visible. -->
-      <details class="card" open data-keep-open>
+        <div class="button-row">
+          <button id="goal-toggle" class="btn btn-tool" type="button">
+            Send to a Point
+          </button>
+          <button class="btn" data-goto="maps" type="button">
+            Maps
+          </button>
+        </div>
 
-        <summary>Path Execution</summary>
+      </section>
+
+      <!-- ============================ ZONES =========================== -->
+      <section class="card screen" data-screen="zones" hidden>
+
+        <p class="help">
+          Hold and drag on the map to trace an area. Name it and save, and the
+          AMR will refuse to plan or drive through it.
+        </p>
+
+        <div class="field-row">
+          <input id="zone-name" type="text" placeholder="Zone name" autocomplete="off">
+          <button id="save-zone-btn" class="btn btn-primary" type="button">Save</button>
+        </div>
+
+        <div class="button-row">
+          <button id="zone-toggle" class="btn btn-tool" type="button">Trace New</button>
+          <button id="discard-zone-btn" class="btn btn-small" type="button">Discard Trace</button>
+          <button id="refresh-zones-btn" class="btn btn-small" type="button">Refresh</button>
+          <button id="clear-zones-btn" class="btn btn-danger btn-small" type="button">Delete All</button>
+        </div>
+
+        <h2 class="section-heading">
+          Saved zones <span id="zone-count" class="badge">0</span>
+        </h2>
+
+        <div id="zone-list" class="list"></div>
+
+      </section>
+
+      <!-- ========================== NEW PATH ========================== -->
+      <section class="card screen" data-screen="path-new" hidden>
+
+        <p class="help">
+          Hold and drag on the map to draw a route. Save it to run later, or
+          send it straight to the AMR.
+        </p>
+
+        <div id="draw-controls">
+          <div class="slider-row">
+            <label for="epsilon-slider">Detail</label>
+            <input id="epsilon-slider" type="range" min="0.02" max="0.40" step="0.01" value="0.10">
+            <output id="epsilon-value" class="mono">0.10 m</output>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <input id="path-name" type="text" placeholder="Path name" autocomplete="off">
+          <button id="save-path-btn" class="btn btn-primary" type="button">Save</button>
+        </div>
+
+        <div class="button-row">
+          <button id="draw-toggle" class="btn btn-tool" type="button">Draw</button>
+          <button id="redraw-path-btn" class="btn btn-small" type="button">Redraw</button>
+          <button id="clear-path-btn" class="btn btn-small" type="button">Clear</button>
+        </div>
+
+        <div class="button-row">
+          <button id="send-path-btn" class="btn btn-primary btn-wide" type="button">
+            Send to AMR now
+          </button>
+        </div>
+
+      </section>
+
+      <!-- ========================== RUN PATH ========================== -->
+      <section class="card screen" data-screen="path-run" hidden>
 
         <div class="status-row">
           <span class="status-label">Status</span>
           <span id="path-status" class="status-value">Idle</span>
         </div>
 
-        <div id="status-panel" class="readout"></div>
-        <div id="battery-panel" class="readout"></div>
-
-      </details>
-
-      <details class="card" id="zone-panel" open>
-
-        <summary>
-          Keep-out Zones
-          <span id="zone-count" class="badge">0 zones</span>
-        </summary>
-
-        <p class="help">
-          Areas the AMR will not enter. Trace one with the
-          <strong>Draw Keep-out Zone</strong> tool, then name and save it.
-        </p>
-
-        <div class="field-row">
-
-          <input
-              id="zone-name"
-              type="text"
-              placeholder="Zone name"
-              autocomplete="off"
-          >
-
-          <button id="save-zone-btn" class="btn btn-primary" type="button">
-            Save Zone
-          </button>
-
-        </div>
-
         <div class="button-row">
-
-          <button id="discard-zone-btn" class="btn btn-small" type="button">
-            Discard Trace
+          <button id="stop-path-btn" class="btn btn-danger btn-wide" type="button">
+            Stop
           </button>
-
-          <button id="refresh-zones-btn" class="btn btn-small" type="button">
-            Refresh
-          </button>
-
-          <button id="clear-zones-btn" class="btn btn-danger btn-small" type="button">
-            Delete All
-          </button>
-
+          <button id="refresh-path-btn" class="btn btn-small" type="button">Refresh</button>
         </div>
 
-        <div id="zone-list" class="list"></div>
-
-      </details>
-
-      <details class="card" id="map-panel" open>
-
-        <summary>Map Manager</summary>
-
-        <div class="field-row">
-
-          <input
-              id="map-name"
-              type="text"
-              placeholder="Map name"
-              autocomplete="off"
-          >
-
-          <button id="save-map-btn" class="btn btn-primary" type="button">
-            Save Map
-          </button>
-
-        </div>
-
-        <div class="button-row">
-
-          <button id="refresh-map-btn" class="btn btn-small" type="button">
-            Refresh
-          </button>
-
-        </div>
-
-        <div id="map-list" class="list"></div>
-
-      </details>
-
-      <details class="card" id="path-panel" open>
-
-        <summary>Path Manager</summary>
-
-        <div class="field-row">
-
-          <input
-              id="path-name"
-              type="text"
-              placeholder="Path name"
-              autocomplete="off"
-          >
-
-          <button id="save-path-btn" class="btn btn-primary" type="button">
-            Save Path
-          </button>
-
-        </div>
-
-        <div class="button-row">
-
-          <button id="refresh-path-btn" class="btn btn-small" type="button">
-            Refresh
-          </button>
-
-        </div>
+        <h2 class="section-heading">Saved paths</h2>
 
         <div id="path-list" class="list"></div>
 
-      </details>
+      </section>
 
-      <details class="card" open>
+      <!-- ====================== REMOTE CONTROL ======================== -->
+      <section class="card screen" data-screen="rc" hidden>
 
-        <summary>Manual Drive</summary>
-
-        <p class="help">Hold a button, or use W / A / S / D.</p>
+        <p class="help">
+          Hold a button to drive, or use <kbd>W</kbd> <kbd>A</kbd>
+          <kbd>S</kbd> <kbd>D</kbd>. The AMR stops itself if something is
+          too close in the direction you are driving.
+        </p>
 
         <div id="teleop-pad">
-
-          <button data-key="w" class="btn btn-pad" type="button">&#9650;</button>
-
+          <button data-key="w" class="btn btn-pad" type="button" aria-label="Forward">&#9650;</button>
           <div class="teleop-middle">
-            <button data-key="a" class="btn btn-pad" type="button">&#9664;</button>
-            <button data-key="d" class="btn btn-pad" type="button">&#9654;</button>
+            <button data-key="a" class="btn btn-pad" type="button" aria-label="Turn left">&#9664;</button>
+            <button data-key="d" class="btn btn-pad" type="button" aria-label="Turn right">&#9654;</button>
           </div>
-
-          <button data-key="s" class="btn btn-pad" type="button">&#9660;</button>
-
+          <button data-key="s" class="btn btn-pad" type="button" aria-label="Reverse">&#9660;</button>
         </div>
 
-      </details>
+      </section>
+
+      <!-- ============================ MAPS ============================ -->
+      <section class="card screen" data-screen="maps" hidden>
+
+        <p class="help">
+          Save the map the AMR has built so far, or load one it built before.
+        </p>
+
+        <div class="field-row">
+          <input id="map-name" type="text" placeholder="Map name" autocomplete="off">
+          <button id="save-map-btn" class="btn btn-primary" type="button">Save</button>
+        </div>
+
+        <div class="button-row">
+          <button id="refresh-map-btn" class="btn btn-small" type="button">Refresh</button>
+        </div>
+
+        <h2 class="section-heading">Saved maps</h2>
+
+        <div id="map-list" class="list"></div>
+
+      </section>
 
     </aside>
 
   </main>
 
-  <div id="toast" role="status" aria-live="polite"></div>
-
-  <!-- Single entry point: ws_client imports every panel and the renderer, so
-       loading them separately only risked double-binding. -->
   <script type="module" src="src/ws_client.js"></script>
 
 </body>

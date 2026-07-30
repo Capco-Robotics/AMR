@@ -249,6 +249,33 @@ whenever the map's size, resolution or origin changes.
 
 ---
 
+## Teleop collision guard *(implemented)*
+
+`drive` frames go straight to `/cmd_vel`, bypassing Nav2 — so none of Nav2's
+obstacle avoidance applies to them. The gateway therefore checks `/scan`
+itself before publishing, and drops the translation (keeping the rotation, so
+the operator can turn away) when either:
+
+- the nearest return within a 60° sector in the direction of travel is closer
+  than `collision_stop_distance` (default 0.35 m), or
+- a scan was arriving and then stopped for over a second — a dead lidar is not
+  evidence of a clear path. If a scan has *never* arrived the guard stays out
+  of the way, so teleop still works on a rig with no lidar.
+
+The console is told, at most once a second:
+
+```json
+{"type": "drive_blocked", "message": "Obstacle 0.22 m ahead -- drive blocked below 0.35 m"}
+```
+
+Parameters: `collision_stop_distance`, `collision_sector_deg`. Setting the
+distance to 0 disables the guard.
+
+Autonomous motion needs none of this — the costmaps mark obstacles and DWB's
+`BaseObstacle` critic scores those trajectories out before they are chosen.
+
+---
+
 ## Validation Rules
 
 ### Today *(implemented)*
